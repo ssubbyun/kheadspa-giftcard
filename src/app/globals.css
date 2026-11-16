@@ -1,26 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --bg-cream: #FBF9F5;
+  --stone-dark: #1A1816;
+  --gold-accent: #C5A880;
+  --gold-hover: #B4966E;
+  --border-subtle: #EBE7DF;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-cream);
+  color: var(--stone-dark);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-serif-luxury {
+  font-family: var(--font-serif);
+}
+
+/* Glassmorphism & Subtle Luxury Shadows */
+.luxury-card-shadow {
+  box-shadow: 0 20px 40px -15px rgba(28, 25, 23, 0.08), 0 0 0 1px rgba(28, 25, 23, 0.04);
+}
+
+.luxury-gold-glow {
+  box-shadow: 0 0 35px -5px rgba(197, 168, 128, 0.25);
+}
+
+html {
+  scroll-behavior: smooth;
 }
