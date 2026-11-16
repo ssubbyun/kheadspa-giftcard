@@ -4,9 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import {
   isFirebaseConfigured,
-  saveGiftCardToFirebase,
+  issueGiftCardInFirebase,
   getGiftCardFromFirebase,
-  saveTransactionToFirebase,
   getTransactionsFromFirebase,
   redeemInFirebase,
 } from './firebase';
@@ -25,36 +24,41 @@ export const ACTIVE_PROMOTION: Promotion = {
   isActive: true,
 };
 
-// 파일 기반 로컬 영구 스토리지 경로 (로컬 개발 및 Firebase 백업용)
+// 파일 기반 로컬 영구 스토리지 경로 (Firebase 미연결 시에만 사용, 하이브리드 Fallback 금지)
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'gift_cards_store.json');
 
 interface StoreData {
   cards: Record<string, GiftCard>;
   transactions: GiftCardTransaction[];
+  processedPaymentIntents: Record<string, string>; // paymentIntentId -> giftCardCode
 }
 
 function loadStore(): StoreData {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return {
+        cards: parsed.cards || {},
+        transactions: parsed.transactions || [],
+        processedPaymentIntents: parsed.processedPaymentIntents || {},
+      };
     }
   } catch (err) {
     console.warn('[Storage] Initializing new local store:', err);
   }
-  return { cards: {}, transactions: [] };
+  return { cards: {}, transactions: [], processedPaymentIntents: {} };
 }
 
-function saveStore(data: StoreData) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('[Storage] Failed to persist data to disk:', err);
+// 지적사항 #3 해결: 로컬 파일 쓰기 실패 시 침묵하지 않고 즉시 예외를 발생시켜 데이터 유실 방지
+function saveStoreStrict(data: StoreData) {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  const tmpFile = `${DATA_FILE}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
+  fs.renameSync(tmpFile, DATA_FILE);
 }
 
 const localStore = loadStore();
@@ -111,8 +115,9 @@ export function generateGiftCardCode(): string {
   return `KSPA-${segment()}-${segment()}-${segment()}`;
 }
 
-// 초기 샘플 카드 시딩 (테스트 및 시연용)
+// 초기 샘플 카드 시딩 (로컬 모드용)
 async function seedInitialCard() {
+  if (isFirebaseConfigured()) return;
   const demoCode = 'KSPA-HOLIDAY-2026';
   if (!localStore.cards[demoCode]) {
     const createdAt = '2026-11-10T10:00:00Z';
@@ -141,6 +146,7 @@ async function seedInitialCard() {
     };
 
     localStore.cards[demoCode] = demoCard;
+    localStore.processedPaymentIntents['pi_test_demo_holiday_200'] = demoCode;
 
     localStore.transactions.push(
       {
@@ -167,26 +173,25 @@ async function seedInitialCard() {
       }
     );
 
-    saveStore(localStore);
+    try {
+      saveStoreStrict(localStore);
+    } catch (e) {
+      console.error('Seed write error:', e);
+    }
   }
 }
 
 seedInitialCard().catch(console.error);
 
-// 1. 카드 조회 (Firebase 우선, 로컬 fallback)
+// 1. 카드 조회 (지적사항 #3 해결: Firebase가 설정되어 있으면 오직 Firebase만 사용, 실패 시 로컬로 넘어가지 않고 에러 반환)
 export async function getGiftCardByCodeAsync(code: string): Promise<{ card?: GiftCard; transactions: GiftCardTransaction[] }> {
   const normalized = code.trim().toUpperCase();
 
   if (isFirebaseConfigured()) {
-    try {
-      const card = await getGiftCardFromFirebase(normalized);
-      if (card) {
-        const txs = await getTransactionsFromFirebase(card.id);
-        return { card, transactions: txs };
-      }
-    } catch (e) {
-      console.warn('[Firebase] Fallback to local store:', e);
-    }
+    const card = await getGiftCardFromFirebase(normalized);
+    if (!card) return { transactions: [] };
+    const txs = await getTransactionsFromFirebase(card.id);
+    return { card, transactions: txs };
   }
 
   const card = localStore.cards[normalized];
@@ -194,27 +199,32 @@ export async function getGiftCardByCodeAsync(code: string): Promise<{ card?: Gif
 
   if (card.status === 'ACTIVE' && new Date() > new Date(card.expiresAt)) {
     card.status = 'EXPIRED';
-    saveStore(localStore);
+    saveStoreStrict(localStore);
   } else if (card.status === 'ACTIVE' && card.currentBalance <= 0) {
     card.status = 'EXHAUSTED';
-    saveStore(localStore);
+    saveStoreStrict(localStore);
   }
 
   const txs = localStore.transactions.filter((t) => t.giftCardId === card.id);
   return { card, transactions: txs };
 }
 
-// 2. 새 카드 발급 (Firebase 및 로컬 동시 기록)
+// 2. 새 카드 발급 (PaymentIntent 재사용 중복 방지 및 단일 저장소 강제)
 export async function issueGiftCard(params: {
   faceValue: number;
+  paidAmount: number;
   buyerName: string;
   buyerEmail: string;
   recipientType: 'self' | 'gift';
   recipientName?: string;
   recipientEmail?: string;
   message?: string;
-  stripePaymentIntentId?: string;
+  stripePaymentIntentId: string;
 }): Promise<GiftCard> {
+  if (!params.stripePaymentIntentId) {
+    throw new Error('Stripe 결제 식별자(PaymentIntent ID)가 필요합니다.');
+  }
+
   const calc = calculatePromotionDiscount(params.faceValue);
   const code = generateGiftCardCode();
   const now = new Date();
@@ -226,7 +236,7 @@ export async function issueGiftCard(params: {
     code,
     initialBalance: params.faceValue,
     currentBalance: params.faceValue,
-    paidAmount: calc.chargeAmount,
+    paidAmount: params.paidAmount,
     currency: 'USD',
     status: 'ACTIVE',
     buyerName: params.buyerName,
@@ -250,30 +260,32 @@ export async function issueGiftCard(params: {
     balanceBefore: 0,
     balanceAfter: params.faceValue,
     staffNote: calc.isPromoActive
-      ? `11월 20% 프로모션 결제 ($${calc.chargeAmount} 결제, $${params.faceValue} 충전)`
+      ? `11월 20% 프로모션 결제 ($${params.paidAmount} 결제, $${params.faceValue} 충전)`
       : `기프트 카드 정상 발급 ($${params.faceValue})`,
     createdAt: now.toISOString(),
   };
 
-  // Firebase에 저장
+  // Firebase가 설정되어 있으면 오직 Firebase 트랜잭션으로만 저장 (실패 시 즉시 예외 발생)
   if (isFirebaseConfigured()) {
-    try {
-      await saveGiftCardToFirebase(newCard);
-      await saveTransactionToFirebase(initialTx);
-    } catch (err) {
-      console.warn('[Firebase] Save error, stored locally:', err);
-    }
+    return await issueGiftCardInFirebase(newCard, initialTx);
   }
 
-  // 로컬 파일 동기화
+  // 로컬 모드: PaymentIntent 중복 사용 검증
+  if (localStore.processedPaymentIntents[params.stripePaymentIntentId]) {
+    throw new Error('이미 처리되어 기프트 카드가 발급된 결제건(PaymentIntent)입니다.');
+  }
+
+  localStore.processedPaymentIntents[params.stripePaymentIntentId] = code;
   localStore.cards[code] = newCard;
   localStore.transactions.push(initialTx);
-  saveStore(localStore);
+
+  // 파일 쓰기 실패 시 즉시 에러 발생 (지적사항 #3 해결)
+  saveStoreStrict(localStore);
 
   return newCard;
 }
 
-// 3. 매장 차감 (Redeem - Firebase 원자적 트랜잭션 지원)
+// 3. 매장 차감 (지적사항 #3 해결: Firebase 차감 실패 시 로컬로 넘어가지 않고 즉시 실패 반환)
 export async function redeemGiftCardAsync(params: {
   code: string;
   redeemAmount: number;
@@ -281,15 +293,9 @@ export async function redeemGiftCardAsync(params: {
   staffName: string;
   staffNote?: string;
 }): Promise<{ success: boolean; message: string; card?: GiftCard; remainingBalance?: number }> {
-  // Firebase 연동된 경우 Firestore runTransaction 실행
+  // Firebase 연동 시 오직 Firebase에서만 처리하고 그 결과를 그대로 반환 (절대 로컬 Fallback 하지 않음!)
   if (isFirebaseConfigured()) {
-    const fbResult = await redeemInFirebase(params);
-    if (fbResult.success && fbResult.card) {
-      // 로컬 캐시도 갱신
-      localStore.cards[params.code.toUpperCase()] = fbResult.card;
-      saveStore(localStore);
-      return fbResult;
-    }
+    return await redeemInFirebase(params);
   }
 
   const { card } = await getGiftCardByCodeAsync(params.code);
@@ -297,7 +303,9 @@ export async function redeemGiftCardAsync(params: {
     return { success: false, message: '기프트 카드를 찾을 수 없습니다. 번호를 다시 확인해 주세요.' };
   }
 
-  if (card.status === 'EXPIRED') {
+  if (card.status === 'EXPIRED' || new Date() > new Date(card.expiresAt)) {
+    card.status = 'EXPIRED';
+    saveStoreStrict(localStore);
     return { success: false, message: '유효기간(구매일로부터 2년)이 만료된 기프트 카드입니다.' };
   }
 
@@ -340,7 +348,7 @@ export async function redeemGiftCardAsync(params: {
   };
 
   localStore.transactions.push(newTx);
-  saveStore(localStore);
+  saveStoreStrict(localStore);
 
   return {
     success: true,

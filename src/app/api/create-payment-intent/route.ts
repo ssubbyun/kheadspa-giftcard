@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 서버 사이드 프로모션 할인 재계산 (클라이언트 변조 원천 차단)
+    // 서버 사이드 프로모션 할인 재계산
     const calculation = calculatePromotionDiscount(amount);
 
-    // Stripe PaymentIntent 생성
+    // 실제 Stripe PaymentIntent 생성 (실패 시 예외 발생 — 모의 결제 전환 없음)
     const paymentIntent = await createStripePaymentIntent({
       amountInDollars: calculation.chargeAmount,
       faceValue: calculation.faceValue,
@@ -47,12 +47,11 @@ export async function POST(req: NextRequest) {
       discountAmount: calculation.discountAmount,
       discountRate: calculation.discountRate,
       isPromoActive: calculation.isPromoActive,
-      isMock: paymentIntent.isMock,
     });
   } catch (error: any) {
     console.error('Error creating payment intent:', error);
     return NextResponse.json(
-      { error: error.message || '결제 인텐트 생성에 실패했습니다.' },
+      { error: error.message || 'Stripe 결제 인텐트 생성에 실패했습니다.' },
       { status: 500 }
     );
   }

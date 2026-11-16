@@ -1,21 +1,38 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ShieldCheck, MapPin, Search, CheckCircle2, AlertTriangle, ArrowRight, Loader2 } from 'lucide-react';
-import { GiftCard } from '@/types/gift-card';
+import {
+  ShieldCheck,
+  MapPin,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
+  KeyRound,
+} from 'lucide-react';
 
 interface StaffTerminalProps {
   lang: 'ko' | 'en';
 }
 
+interface SafeCardView {
+  code: string;
+  initialBalance: number;
+  currentBalance: number;
+  status: string;
+  recipientMaskedName?: string;
+  recipientName?: string;
+  expiresAt: string;
+}
+
 export default function StaffTerminal({ lang }: StaffTerminalProps) {
+  const [staffPin, setStaffPin] = useState('');
   const [location, setLocation] = useState<'Manhattan' | 'Norwood' | 'Fort Lee'>('Manhattan');
   const [staffName, setStaffName] = useState('Sarah K.');
   const [code, setCode] = useState('KSPA-HOLIDAY-2026');
-  const [card, setCard] = useState<GiftCard | null>(null);
+  const [card, setCard] = useState<SafeCardView | null>(null);
   const [redeemAmount, setRedeemAmount] = useState('50');
   const [staffNote, setStaffNote] = useState('Signature Wet Head Spa 차감 결제');
-  
+
   const [isSearching, setIsSearching] = useState(false);
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +51,6 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '카드를 찾을 수 없습니다.');
       setCard(data.card);
-      // 기본 차감액을 현재 잔액으로 자동 제안
       setRedeemAmount(Math.min(data.card.currentBalance, 150).toString());
     } catch (err: any) {
       setError(err.message || '카드 조회 실패');
@@ -47,6 +63,11 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
   const handleExecuteRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!card) return;
+
+    if (!staffPin.trim()) {
+      setError('매장 관리자/직원 보안 PIN 번호를 입력해 주세요.');
+      return;
+    }
 
     const amt = Number(redeemAmount);
     if (!amt || amt <= 0) {
@@ -64,9 +85,13 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
     setSuccessMsg(null);
 
     try {
+      // 지적사항 #2 해결: 요청 헤더에 직원 인증 PIN(`x-staff-pin`) 전달
       const res = await fetch('/api/gift-cards/redeem', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-staff-pin': staffPin.trim(),
+        },
         body: JSON.stringify({
           code: card.code,
           redeemAmount: amt,
@@ -79,7 +104,9 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '차감 처리에 실패했습니다.');
 
-      setSuccessMsg(`성공적으로 $${amt.toFixed(2)} 차감 완료되었습니다! (남은 잔액: $${data.remainingBalance.toFixed(2)})`);
+      setSuccessMsg(
+        `성공적으로 $${amt.toFixed(2)} 차감 완료되었습니다! (남은 잔액: $${data.remainingBalance.toFixed(2)})`
+      );
       setCard(data.card);
     } catch (err: any) {
       setError(err.message || '차감 처리 중 오류 발생');
@@ -90,7 +117,6 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
 
   return (
     <div className="max-w-xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
       {/* 매장 카운터 헤더 배너 */}
       <div className="p-5 rounded-2xl bg-[#1C1917] text-[#FBF9F5] shadow-lg flex items-center justify-between border border-stone-800">
         <div>
@@ -102,7 +128,9 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           </h2>
           <p className="text-xs text-stone-400 mt-0.5 flex items-center gap-1.5">
             <MapPin className="w-3 h-3 text-amber-400" />
-            <span>현재 지점: <strong>{location}</strong> (담당: {staffName})</span>
+            <span>
+              현재 지점: <strong>{location}</strong> (담당: {staffName})
+            </span>
           </p>
         </div>
         <span className="flex h-3 w-3 relative">
@@ -112,29 +140,44 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
       </div>
 
       <div className="bg-white p-6 sm:p-7 rounded-2xl border border-[#EBE7DF] luxury-card-shadow space-y-5 text-xs">
-        
-        {/* 지점 및 직원 선택 */}
-        <div className="grid grid-cols-2 gap-3 pb-4 border-b border-stone-200">
+        {/* 직원 보안 PIN 및 지점/직원 설정 */}
+        <div className="space-y-3 pb-4 border-b border-stone-200">
           <div>
-            <label className="block text-stone-600 font-medium mb-1">근무 지점</label>
-            <select
-              value={location}
-              onChange={(e) => setLocation(e.target.value as any)}
-              className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-[#FAF7F2] font-semibold text-stone-800 focus:outline-none"
-            >
-              <option value="Manhattan">Manhattan Flagship</option>
-              <option value="Norwood">Norwood Studio</option>
-              <option value="Fort Lee">Fort Lee Spa</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-stone-600 font-medium mb-1">담당 테라피스트 / 직원</label>
+            <label className="block text-stone-800 font-bold mb-1 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+              <span>매장 직원 보안 PIN (필수 인증)</span>
+            </label>
             <input
-              type="text"
-              value={staffName}
-              onChange={(e) => setStaffName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-[#FAF7F2] text-stone-800 focus:outline-none"
+              type="password"
+              placeholder="직원 전용 보안 PIN 입력 (예: 1234)"
+              value={staffPin}
+              onChange={(e) => setStaffPin(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-[#FAF7F2] font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-stone-600 font-medium mb-1">근무 지점</label>
+              <select
+                value={location}
+                onChange={(e) => setLocation(e.target.value as any)}
+                className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-[#FAF7F2] font-semibold text-stone-800 focus:outline-none"
+              >
+                <option value="Manhattan">Manhattan Flagship</option>
+                <option value="Norwood">Norwood Studio</option>
+                <option value="Fort Lee">Fort Lee Spa</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-stone-600 font-medium mb-1">담당 테라피스트 / 직원</label>
+              <input
+                type="text"
+                value={staffName}
+                onChange={(e) => setStaffName(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-[#FAF7F2] text-stone-800 focus:outline-none"
+              />
+            </div>
           </div>
         </div>
 
@@ -183,7 +226,9 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
             <div className="flex justify-between items-center">
               <div>
                 <span className="text-[10px] text-stone-500 uppercase font-semibold">소지자 / 상태</span>
-                <p className="font-bold text-sm text-stone-900">{card.recipientName} 님</p>
+                <p className="font-bold text-sm text-stone-900">
+                  {card.recipientName || card.recipientMaskedName || '고객'} 님 ({card.status})
+                </p>
               </div>
               <div className="text-right">
                 <span className="text-[10px] text-stone-500 uppercase font-semibold">사용 가능 잔여 잔액</span>
@@ -252,7 +297,6 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
             </button>
           </form>
         )}
-
       </div>
     </div>
   );

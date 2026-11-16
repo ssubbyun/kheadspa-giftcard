@@ -36,38 +36,92 @@ export function isFirebaseConfigured(): boolean {
   return Boolean(db);
 }
 
-// 1. 기프트 카드 저장 (Firestore)
-export async function saveGiftCardToFirebase(card: GiftCard): Promise<void> {
-  if (!db) return;
-  const docRef = db.collection('gift_cards').doc(card.code);
-  await docRef.set({
-    ...card,
-    updatedAt: FieldValue.serverTimestamp(),
+// 1. 기프트 카드 원자적 발급 (동일 Stripe PaymentIntent 중복 발급 원천 차단)
+export async function issueGiftCardInFirebase(
+  card: GiftCard,
+  initialTx: GiftCardTransaction
+): Promise<GiftCard> {
+  if (!db) {
+    throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
+  }
+
+  if (!card.stripePaymentIntentId) {
+    throw new Error('유효한 Stripe PaymentIntent ID가 누락되었습니다.');
+  }
+
+  const cardRef = db.collection('gift_cards').doc(card.code);
+  const txRef = db.collection('gift_card_transactions').doc(initialTx.id);
+  const piLockRef = db.collection('processed_payment_intents').doc(card.stripePaymentIntentId);
+
+  await db.runTransaction(async (t: any) => {
+    const piDoc = await t.get(piLockRef);
+    if (piDoc.exists) {
+      throw new Error('이미 처리되어 카드가 발급된 결제건(PaymentIntent)입니다.');
+    }
+
+    const existingCard = await t.get(cardRef);
+    if (existingCard.exists) {
+      throw new Error('동일한 기프트 카드 코드가 이미 존재합니다. 다시 시도해 주세요.');
+    }
+
+    t.set(piLockRef, {
+      paymentIntentId: card.stripePaymentIntentId,
+      giftCardCode: card.code,
+      giftCardId: card.id,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    t.set(cardRef, {
+      ...card,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    t.set(txRef, {
+      ...initialTx,
+      createdAtServer: FieldValue.serverTimestamp(),
+    });
   });
+
+  return card;
 }
 
-// 2. 기프트 카드 조회
+// 2. 기프트 카드 조회 (만료일 expiresAt 실시간 검증 및 상태 반영)
 export async function getGiftCardFromFirebase(code: string): Promise<GiftCard | null> {
-  if (!db) return null;
+  if (!db) {
+    throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
+  }
+
   const docRef = db.collection('gift_cards').doc(code.toUpperCase());
   const snap = await docRef.get();
   if (!snap.exists) return null;
-  return snap.data() as GiftCard;
+
+  const card = snap.data() as GiftCard;
+  const now = new Date();
+
+  // 현재 시각과 expiresAt을 비교하여 만료 여부 실시간 판정 (지적사항 #4 해결)
+  if (card.status === 'ACTIVE' && now > new Date(card.expiresAt)) {
+    card.status = 'EXPIRED';
+    await docRef.update({
+      status: 'EXPIRED',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  } else if (card.status === 'ACTIVE' && card.currentBalance <= 0) {
+    card.status = 'EXHAUSTED';
+    await docRef.update({
+      status: 'EXHAUSTED',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+
+  return card;
 }
 
-// 3. 트랜잭션 기록 저장
-export async function saveTransactionToFirebase(tx: GiftCardTransaction): Promise<void> {
-  if (!db) return;
-  const docRef = db.collection('gift_card_transactions').doc(tx.id);
-  await docRef.set({
-    ...tx,
-    createdAtServer: FieldValue.serverTimestamp(),
-  });
-}
-
-// 4. 특정 카드의 트랜잭션 내역 조회
+// 3. 특정 카드의 트랜잭션 내역 조회
 export async function getTransactionsFromFirebase(cardId: string): Promise<GiftCardTransaction[]> {
-  if (!db) return [];
+  if (!db) {
+    throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
+  }
+
   const snap = await db
     .collection('gift_card_transactions')
     .where('giftCardId', '==', cardId)
@@ -77,7 +131,7 @@ export async function getTransactionsFromFirebase(cardId: string): Promise<GiftC
   return snap.docs.map((doc: any) => doc.data() as GiftCardTransaction);
 }
 
-// 5. 원자적 차감 트랜잭션 (Firestore runTransaction으로 중복 차감 완벽 차단)
+// 4. 원자적 차감 트랜잭션 (만료일 expiresAt 비교 포함 및 에러 시 로컬 Fallback 없이 즉시 반환)
 export async function redeemInFirebase(params: {
   code: string;
   redeemAmount: number;
@@ -86,7 +140,7 @@ export async function redeemInFirebase(params: {
   staffNote?: string;
 }): Promise<{ success: boolean; message: string; card?: GiftCard; remainingBalance?: number }> {
   if (!db) {
-    return { success: false, message: 'Firebase가 연결되지 않았습니다.' };
+    throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
   }
 
   const cardRef = db.collection('gift_cards').doc(params.code.toUpperCase());
@@ -100,8 +154,16 @@ export async function redeemInFirebase(params: {
       }
 
       const card = doc.data() as GiftCard;
+      const now = new Date();
 
-      if (card.status === 'EXPIRED') {
+      // 지적사항 #4 해결: status 검사뿐만 아니라 실제 expiresAt 시각과 현재 시각 비교
+      if (card.status === 'EXPIRED' || now > new Date(card.expiresAt)) {
+        if (card.status !== 'EXPIRED') {
+          t.update(cardRef, {
+            status: 'EXPIRED',
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
         throw new Error('유효기간(구매일로부터 2년)이 만료된 기프트 카드입니다.');
       }
 
@@ -131,7 +193,7 @@ export async function redeemInFirebase(params: {
         location: params.location,
         staffName: params.staffName,
         staffNote: params.staffNote || '현장 시술 차감',
-        createdAt: new Date().toISOString(),
+        createdAt: now.toISOString(),
       };
 
       t.update(cardRef, {

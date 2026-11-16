@@ -1,18 +1,47 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Calendar, History, ArrowDownRight, ArrowUpRight, AlertCircle, Loader2 } from 'lucide-react';
-import { GiftCard, GiftCardTransaction } from '@/types/gift-card';
+import {
+  Search,
+  Calendar,
+  History,
+  ArrowDownRight,
+  ArrowUpRight,
+  AlertCircle,
+  Loader2,
+} from 'lucide-react';
 
 interface BalanceTrackerProps {
   lang: 'ko' | 'en';
 }
 
+interface SafeGiftCard {
+  code: string;
+  initialBalance: number;
+  currentBalance: number;
+  currency: string;
+  status: 'ACTIVE' | 'EXHAUSTED' | 'EXPIRED' | 'CANCELLED';
+  recipientMaskedName: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+interface SafeTransaction {
+  id: string;
+  transactionType: 'INITIAL_PURCHASE' | 'REDEEM' | 'REFUND';
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  location?: string;
+  summary: string;
+  createdAt: string;
+}
+
 export default function BalanceTracker({ lang }: BalanceTrackerProps) {
   const [code, setCode] = useState('KSPA-HOLIDAY-2026');
   const [loading, setLoading] = useState(false);
-  const [card, setCard] = useState<GiftCard | null>(null);
-  const [transactions, setTransactions] = useState<GiftCardTransaction[]>([]);
+  const [card, setCard] = useState<SafeGiftCard | null>(null);
+  const [transactions, setTransactions] = useState<SafeTransaction[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const handleLookup = async (e?: React.FormEvent) => {
@@ -43,7 +72,6 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
 
   return (
     <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-300">
-      
       {/* 타이틀 */}
       <div className="text-center space-y-2">
         <span className="text-[11px] uppercase tracking-widest text-stone-500 font-semibold">
@@ -84,7 +112,9 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
           </div>
 
           <div className="flex items-center justify-between text-[11px] text-stone-500 pt-1">
-            <span>{lang === 'ko' ? '데모 테스트 코드:' : 'Demo Code:'} <code>KSPA-HOLIDAY-2026</code></span>
+            <span>
+              {lang === 'ko' ? '데모 테스트 코드:' : 'Demo Code:'} <code>KSPA-HOLIDAY-2026</code>
+            </span>
             <button
               type="button"
               onClick={() => {
@@ -109,7 +139,6 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
         {/* 카드 조회 결과 */}
         {card && (
           <div className="space-y-6 pt-5 border-t border-stone-200">
-            
             {/* 잔액 요약 카드 */}
             <div className="p-5 rounded-2xl bg-gradient-to-br from-[#1C1917] to-[#2B2724] text-[#FBF9F5] shadow-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
@@ -120,9 +149,13 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                   ${card.currentBalance.toFixed(2)}
                 </span>
                 <div className="flex items-center gap-3 mt-1.5 text-xs text-stone-300">
-                  <span>{lang === 'ko' ? '최초 충전액:' : 'Initial Value:'} ${card.initialBalance.toFixed(2)}</span>
+                  <span>
+                    {lang === 'ko' ? '최초 충전액:' : 'Initial Value:'} ${card.initialBalance.toFixed(2)}
+                  </span>
                   <span>·</span>
-                  <span>{lang === 'ko' ? '소지자:' : 'Recipient:'} {card.recipientName} 님</span>
+                  <span>
+                    {lang === 'ko' ? '소지자:' : 'Recipient:'} {card.recipientMaskedName} 님
+                  </span>
                 </div>
               </div>
 
@@ -185,13 +218,10 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                           )}
                         </div>
                         <div>
-                          <p className="font-semibold text-stone-900">
-                            {tx.staffNote || (tx.amount < 0 ? '현장 시술 차감' : '기프트 카드 발급')}
-                          </p>
+                          <p className="font-semibold text-stone-900">{tx.summary}</p>
                           <p className="text-[10px] text-stone-500 mt-0.5">
                             {new Date(tx.createdAt).toLocaleString()}
                             {tx.location && ` · ${tx.location} 지점`}
-                            {tx.staffName && ` (${tx.staffName})`}
                           </p>
                         </div>
                       </div>
@@ -202,7 +232,9 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                             tx.amount < 0 ? 'text-rose-600' : 'text-emerald-700'
                           }`}
                         >
-                          {tx.amount < 0 ? `-$${Math.abs(tx.amount).toFixed(2)}` : `+$${tx.amount.toFixed(2)}`}
+                          {tx.amount < 0
+                            ? `-$${Math.abs(tx.amount).toFixed(2)}`
+                            : `+$${tx.amount.toFixed(2)}`}
                         </span>
                         <span className="block text-[10px] text-stone-400">
                           잔액: ${tx.balanceAfter.toFixed(2)}
@@ -213,10 +245,8 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                 )}
               </div>
             </div>
-
           </div>
         )}
-
       </div>
     </div>
   );
