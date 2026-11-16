@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getGiftCardByCode } from '@/lib/storage';
+import { getGiftCardByCodeAsync } from '@/lib/storage';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const { card, transactions } = getGiftCardByCode(code);
+  const { card, transactions } = await getGiftCardByCodeAsync(code);
 
   if (!card) {
     return NextResponse.json(

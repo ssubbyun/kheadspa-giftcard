@@ -1,5 +1,15 @@
 import { GiftCard, GiftCardTransaction, Promotion } from '@/types/gift-card';
 import QRCode from 'qrcode';
+import fs from 'fs';
+import path from 'path';
+import {
+  isFirebaseConfigured,
+  saveGiftCardToFirebase,
+  getGiftCardFromFirebase,
+  saveTransactionToFirebase,
+  getTransactionsFromFirebase,
+  redeemInFirebase,
+} from './firebase';
 
 // 1. 활성 프로모션: 11월 30일까지 20% 특별 할인
 export const ACTIVE_PROMOTION: Promotion = {
@@ -15,21 +25,39 @@ export const ACTIVE_PROMOTION: Promotion = {
   isActive: true,
 };
 
-// 인메모리 저장소 (개발/서버리스 환경 지원)
-const globalStore = global as unknown as {
-  __giftCards?: Map<string, GiftCard>;
-  __transactions?: GiftCardTransaction[];
-};
+// 파일 기반 로컬 영구 스토리지 경로 (로컬 개발 및 Firebase 백업용)
+const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_FILE = path.join(DATA_DIR, 'gift_cards_store.json');
 
-if (!globalStore.__giftCards) {
-  globalStore.__giftCards = new Map<string, GiftCard>();
-}
-if (!globalStore.__transactions) {
-  globalStore.__transactions = [];
+interface StoreData {
+  cards: Record<string, GiftCard>;
+  transactions: GiftCardTransaction[];
 }
 
-const cards = globalStore.__giftCards;
-const transactions = globalStore.__transactions;
+function loadStore(): StoreData {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.warn('[Storage] Initializing new local store:', err);
+  }
+  return { cards: {}, transactions: [] };
+}
+
+function saveStore(data: StoreData) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[Storage] Failed to persist data to disk:', err);
+  }
+}
+
+const localStore = loadStore();
 
 // 2년 유효기간 계산 헬퍼 함수
 export function calculateTwoYearExpiry(startDate: Date = new Date()): string {
@@ -83,10 +111,10 @@ export function generateGiftCardCode(): string {
   return `KSPA-${segment()}-${segment()}-${segment()}`;
 }
 
-// 초기 샘플 카드 시딩 (테스트 및 즉시 시연용)
+// 초기 샘플 카드 시딩 (테스트 및 시연용)
 async function seedInitialCard() {
   const demoCode = 'KSPA-HOLIDAY-2026';
-  if (!cards.has(demoCode)) {
+  if (!localStore.cards[demoCode]) {
     const createdAt = '2026-11-10T10:00:00Z';
     const expiresAt = calculateTwoYearExpiry(new Date(createdAt));
     const qrDataUrl = await QRCode.toDataURL(demoCode, { margin: 1, width: 220 });
@@ -112,10 +140,9 @@ async function seedInitialCard() {
       expiresAt,
     };
 
-    cards.set(demoCode, demoCard);
+    localStore.cards[demoCode] = demoCard;
 
-    // 샘플 트랜잭션 기록
-    transactions.push(
+    localStore.transactions.push(
       {
         id: 'tx-001',
         giftCardId: demoCard.id,
@@ -139,29 +166,45 @@ async function seedInitialCard() {
         createdAt: '2026-11-13T14:30:00Z',
       }
     );
+
+    saveStore(localStore);
   }
 }
 
 seedInitialCard().catch(console.error);
 
-// 카드 조회
-export function getGiftCardByCode(code: string): { card?: GiftCard; transactions: GiftCardTransaction[] } {
+// 1. 카드 조회 (Firebase 우선, 로컬 fallback)
+export async function getGiftCardByCodeAsync(code: string): Promise<{ card?: GiftCard; transactions: GiftCardTransaction[] }> {
   const normalized = code.trim().toUpperCase();
-  const card = cards.get(normalized);
-  if (!card) return { transactions: [] };
 
-  // 만료일 체크 (구매일로부터 2년)
-  if (card.status === 'ACTIVE' && new Date() > new Date(card.expiresAt)) {
-    card.status = 'EXPIRED';
-  } else if (card.status === 'ACTIVE' && card.currentBalance <= 0) {
-    card.status = 'EXHAUSTED';
+  if (isFirebaseConfigured()) {
+    try {
+      const card = await getGiftCardFromFirebase(normalized);
+      if (card) {
+        const txs = await getTransactionsFromFirebase(card.id);
+        return { card, transactions: txs };
+      }
+    } catch (e) {
+      console.warn('[Firebase] Fallback to local store:', e);
+    }
   }
 
-  const txs = transactions.filter((t) => t.giftCardId === card.id);
+  const card = localStore.cards[normalized];
+  if (!card) return { transactions: [] };
+
+  if (card.status === 'ACTIVE' && new Date() > new Date(card.expiresAt)) {
+    card.status = 'EXPIRED';
+    saveStore(localStore);
+  } else if (card.status === 'ACTIVE' && card.currentBalance <= 0) {
+    card.status = 'EXHAUSTED';
+    saveStore(localStore);
+  }
+
+  const txs = localStore.transactions.filter((t) => t.giftCardId === card.id);
   return { card, transactions: txs };
 }
 
-// 새 카드 발급
+// 2. 새 카드 발급 (Firebase 및 로컬 동시 기록)
 export async function issueGiftCard(params: {
   faceValue: number;
   buyerName: string;
@@ -199,10 +242,7 @@ export async function issueGiftCard(params: {
     expiresAt, // 2-year expiration date
   };
 
-  cards.set(code, newCard);
-
-  // 최초 발급 트랜잭션 기록
-  transactions.push({
+  const initialTx: GiftCardTransaction = {
     id: `tx-${Date.now()}`,
     giftCardId: newCard.id,
     transactionType: 'INITIAL_PURCHASE',
@@ -213,20 +253,46 @@ export async function issueGiftCard(params: {
       ? `11월 20% 프로모션 결제 ($${calc.chargeAmount} 결제, $${params.faceValue} 충전)`
       : `기프트 카드 정상 발급 ($${params.faceValue})`,
     createdAt: now.toISOString(),
-  });
+  };
+
+  // Firebase에 저장
+  if (isFirebaseConfigured()) {
+    try {
+      await saveGiftCardToFirebase(newCard);
+      await saveTransactionToFirebase(initialTx);
+    } catch (err) {
+      console.warn('[Firebase] Save error, stored locally:', err);
+    }
+  }
+
+  // 로컬 파일 동기화
+  localStore.cards[code] = newCard;
+  localStore.transactions.push(initialTx);
+  saveStore(localStore);
 
   return newCard;
 }
 
-// 매장 차감 (Redeem)
-export function redeemGiftCard(params: {
+// 3. 매장 차감 (Redeem - Firebase 원자적 트랜잭션 지원)
+export async function redeemGiftCardAsync(params: {
   code: string;
   redeemAmount: number;
   location: 'Manhattan' | 'Norwood' | 'Fort Lee';
   staffName: string;
   staffNote?: string;
-}): { success: boolean; message: string; card?: GiftCard; remainingBalance?: number } {
-  const { card } = getGiftCardByCode(params.code);
+}): Promise<{ success: boolean; message: string; card?: GiftCard; remainingBalance?: number }> {
+  // Firebase 연동된 경우 Firestore runTransaction 실행
+  if (isFirebaseConfigured()) {
+    const fbResult = await redeemInFirebase(params);
+    if (fbResult.success && fbResult.card) {
+      // 로컬 캐시도 갱신
+      localStore.cards[params.code.toUpperCase()] = fbResult.card;
+      saveStore(localStore);
+      return fbResult;
+    }
+  }
+
+  const { card } = await getGiftCardByCodeAsync(params.code);
   if (!card) {
     return { success: false, message: '기프트 카드를 찾을 수 없습니다. 번호를 다시 확인해 주세요.' };
   }
@@ -260,7 +326,7 @@ export function redeemGiftCard(params: {
     card.status = 'EXHAUSTED';
   }
 
-  transactions.push({
+  const newTx: GiftCardTransaction = {
     id: `tx-${Date.now()}`,
     giftCardId: card.id,
     transactionType: 'REDEEM',
@@ -271,7 +337,10 @@ export function redeemGiftCard(params: {
     staffName: params.staffName,
     staffNote: params.staffNote || '현장 시술 차감',
     createdAt: new Date().toISOString(),
-  });
+  };
+
+  localStore.transactions.push(newTx);
+  saveStore(localStore);
 
   return {
     success: true,

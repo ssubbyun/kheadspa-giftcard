@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { redeemGiftCard } from '@/lib/storage';
+import { redeemGiftCardAsync } from '@/lib/storage';
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '올바른 차감 금액을 입력해 주세요.' }, { status: 400 });
     }
 
-    const result = redeemGiftCard({
+    const result = await redeemGiftCardAsync({
       code,
       redeemAmount: amount,
       location: location || 'Manhattan',

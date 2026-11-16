@@ -1,0 +1,48 @@
+{
+  "cards": {
+    "KSPA-HOLIDAY-2026": {
+      "id": "card-demo-001",
+      "code": "KSPA-HOLIDAY-2026",
+      "initialBalance": 200,
+      "currentBalance": 50,
+      "paidAmount": 160,
+      "currency": "USD",
+      "status": "ACTIVE",
+      "buyerName": "김민서",
+      "buyerEmail": "minseo.kim@example.com",
+      "recipientType": "gift",
+      "recipientName": "이지은",
+      "recipientEmail": "jieun.lee@example.com",
+      "message": "생일 축하해요! 맨해튼 K-headspa에서 힐링하고 오세요 :)",
+      "qrCodeDataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANwAAADcCAYAAAAbWs+BAAAAAklEQVR4AewaftIAAARZSURBVO3BQY4giZEDQWeg/v9laoC57SXzkGJXa90s/QeSJg5JM4ekmUPSzCFp5pA0c0iaOSTNHJJmDkkzP7yUBP2rLV9Jwhtt+Y2SoH+15ckhaeaQNHNImjkkzRySZg5JM4ekmUPSzCFp5oePteVvlYS1tnwlCW+0Za0tf6skfOWQNHNImjkkzRySZg5JM4ekmUPSzCFp5oc/IAlrbVlLwpO2vJGEJ215IwlP2rKWhLW2LB2SZg5JM4ekmUPSzCFp5pA0c0iaOSTNHJJmftAflYSvJOGNtujPOCTNHJJmDkkzh6SZQ9LMIWnmkDRzSJr5QX+FtjxJwhtJeNIWfe+QNHNImjkkzRySZg5JM4ekmUPSzCFp5pA088Mf0Bb9qy1vJOFJW95Iwm/Ulv91h6SZQ9LMIWnmkDRzSJo5JM0ckmYOSTM/fCwJ0v+VBMEhaeaQNHNImjkkzRySZg5JM4ekmUPSzCFp5oeX2qLfLQlrbdF7h6SZQ9LMIWnmkDRzSJo5JM0ckmYOSTOHpJkfXkrCG215koS/WVveaMtX2vKVJHwlCX+ztiwdkmYOSTOHpJlD0swhaeaQNHNImjkkzfzwi7XlK0l40pYvJeFJW95IwpO2fCUJX2rLkyS80Za/1SFp5pA0c0iaOSTNHJJmDkkzh6SZQ9LMIWkm/QcvJOErbflKEtbaspaEr7RlLQlP2vKVJLzRlqVD0swhaeaQNHNImjkkzRySZg5JM4ekmR/+gCS80ZYnbVlLwhtteZKEr7RlLQlvtOVJEr7Slq8k4Y22PDkkzRySZg5JM4ekmUPSzCFp5pA0c0iaOSTNpP/gQ0n4jdryJAlvtOU3SsIbbXmShDfaspaEr7TlSRLeaMuTQ9LMIWnmkDRzSJo5JM0ckmYOSTOHpJn0H+i/IglP2vJGEp605Y0krLXlSRK+0pY3kvCVtjw5JM0ckmYOSTOHpJlD0swhaeaQNHNImjkkzfzwUhL0r7a80ZYnSXijLUtt+VISnrTljSR8pS1PkvCVQ9LMIWnmkDRzSJo5JM0ckmYOSTOHpJlD0swPH2vL3yoJX0rCV5LwpC1fScKX2vIkCb9RW75ySJo5JM0ckmYOSTOHpJlD0swhaeaQNPPDH5CEtbb8zdryJAlvtOVJEt5oyxtJWErCG215koQ32vLkkDRzSJo5JM0ckmYOSTOHpJlD0swhaeaQNPOD/qi2fKUtbyThK0lYa8uTJHylLV85JM0ckmYOSTOHpJlD0swhaeaQNHNImvlBf1QS3mjLUlt+qyT8rQ5JM4ekmUPSzCFp5pA0c0iaOSTNHJJmDkkzP/wBbfn/oC1PkvCVJPxWSfhKW5aS8EZbnhySZg5JM4ekmUPSzCFp5pA0c0iaOSTN/PCxJOhfSXjSlq+05Y0k/EZt+Y3a8pVD0swhaeaQNHNImjkkzRySZg5JM4ekmUPSTPoPJE0ckmYOSTOHpJlD0swhaeaQNHNImjkkzfwHAV0UwYLH4foAAAAASUVORK5CYII=",
+      "stripePaymentIntentId": "pi_test_demo_holiday_200",
+      "promotionId": "promo-nov-2026-20off",
+      "createdAt": "2026-11-10T10:00:00Z",
+      "expiresAt": "2028-11-10T10:00:00.000Z"
+    }
+  },
+  "transactions": [
+    {
+      "id": "tx-001",
+      "giftCardId": "card-demo-001",
+      "transactionType": "INITIAL_PURCHASE",
+      "amount": 200,
+      "balanceBefore": 0,
+      "balanceAfter": 200,
+      "staffNote": "11월 20% 프로모션 구매 ($160 결제, $200 충전)",
+      "createdAt": "2026-11-10T10:00:00Z"
+    },
+    {
+      "id": "tx-002",
+      "giftCardId": "card-demo-001",
+      "transactionType": "REDEEM",
+      "amount": -150,
+      "balanceBefore": 200,
+      "balanceAfter": 50,
+      "location": "Manhattan",
+      "staffName": "Sarah K.",
+      "staffNote": "Signature Wet Head Spa 90min 시술 차감",
+      "createdAt": "2026-11-13T14:30:00Z"
+    }
+  ]
+}
