@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "build:firebase": "next build && node scripts/prepare-firebase-deploy.mjs",
-    "deploy:firebase": "pnpm build:firebase && npx firebase-tools deploy"
+    "deploy:firebase": "pnpm build:firebase && npx firebase-tools deploy",
+    "qa": "node .agents/skills/kheadspa-qa-tester/scripts/run-qa-suite.mjs",
+    "qa:impact": "node .agents/skills/kheadspa-bug-hunter/scripts/analyze-impact.mjs",
+    "qa:verify-fix": "node .agents/skills/kheadspa-code-fixer/scripts/verify-fix-safety.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^7.1.0",

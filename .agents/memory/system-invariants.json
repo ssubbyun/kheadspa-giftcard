@@ -1,0 +1,81 @@
+{
+  "requiredApiRoutes": [
+    {
+      "path": "/api/promotions",
+      "nextRouteFile": "src/app/api/promotions/route.ts",
+      "functionsPattern": "'/api/promotions'"
+    },
+    {
+      "path": "/api/create-payment-intent",
+      "nextRouteFile": "src/app/api/create-payment-intent/route.ts",
+      "functionsPattern": "'/api/create-payment-intent'"
+    },
+    {
+      "path": "/api/gift-cards/check",
+      "nextRouteFile": "src/app/api/gift-cards/check/route.ts",
+      "functionsPattern": "'/api/gift-cards/check'"
+    },
+    {
+      "path": "/api/gift-cards/issue",
+      "nextRouteFile": "src/app/api/gift-cards/issue/route.ts",
+      "functionsPattern": "'/api/gift-cards/issue'"
+    },
+    {
+      "path": "/api/gift-cards/redeem",
+      "nextRouteFile": "src/app/api/gift-cards/redeem/route.ts",
+      "functionsPattern": "'/api/gift-cards/redeem'"
+    },
+    {
+      "path": "/api/gift-cards/resend",
+      "nextRouteFile": "src/app/api/gift-cards/resend/route.ts",
+      "functionsPattern": "'/api/gift-cards/resend'"
+    }
+  ],
+  "forbiddenPublicCheckFields": [
+    "buyerEmail",
+    "recipientEmail",
+    "buyerPhone",
+    "recipientPhone",
+    "stripePaymentIntentId",
+    "message",
+    "buyerName",
+    "recipientName"
+  ],
+  "requiredBuildArtifacts": [
+    ".firebase-public/index.html",
+    ".firebase-public/404.html",
+    "functions/lib/index.js"
+  ],
+  "forbiddenFunctionsEnvPrefixes": [
+    "FIREBASE_",
+    "GCLOUD_",
+    "K_",
+    "PORT"
+  ],
+  "securityInvariants": {
+    "authTimingSafe": {
+      "files": ["src/lib/auth.ts", "functions/src/index.ts"],
+      "requiredToken": "timingSafeEqual"
+    },
+    "stripeVerificationOnIssue": {
+      "files": ["src/app/api/gift-cards/issue/route.ts", "functions/src/index.ts"],
+      "requiredToken": "verifySucceededPaymentIntent"
+    },
+    "noStoreCacheHeader": {
+      "files": [
+        "src/app/api/promotions/route.ts",
+        "src/app/api/create-payment-intent/route.ts",
+        "src/app/api/gift-cards/check/route.ts",
+        "src/app/api/gift-cards/issue/route.ts",
+        "src/app/api/gift-cards/redeem/route.ts",
+        "src/app/api/gift-cards/resend/route.ts",
+        "functions/src/index.ts"
+      ],
+      "requiredToken": "no-store"
+    },
+    "stripeLiveAndTestKeysSupported": {
+      "files": ["src/components/GiftCardForm.tsx"],
+      "requiredTokens": ["pk_test_", "pk_live_"]
+    }
+  }
+}

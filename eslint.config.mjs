@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Firebase & Agent artifacts:
+    ".firebase-public/**",
+    ".firebase/**",
+    "functions/lib/**",
+    "functions/node_modules/**",
+    ".agents/reports/**",
   ]),
 ]);
 
