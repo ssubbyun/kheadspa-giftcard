@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import PromotionBanner from '@/components/PromotionBanner';
 import Header from '@/components/Header';
 import GiftCardHero from '@/components/GiftCardHero';
@@ -12,62 +12,95 @@ import Footer from '@/components/Footer';
 import { GiftCardDesignId } from '@/types/gift-card';
 import { normalizeGiftCardCode } from '@/lib/barcode';
 
+function subscribeLocationSearch(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const handler = () => onStoreChange();
+  window.addEventListener('popstate', handler);
+  window.addEventListener('kheadspa-urlchange', handler);
+  return () => {
+    window.removeEventListener('popstate', handler);
+    window.removeEventListener('kheadspa-urlchange', handler);
+  };
+}
+
+function getLocationSearchClient(): string {
+  return typeof window !== 'undefined' ? window.location.search : '';
+}
+
+function notifyUrlChange(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('kheadspa-urlchange'));
+  }
+}
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'buy' | 'check' | 'staff'>('buy');
+  const locationSearch = useSyncExternalStore(
+    subscribeLocationSearch,
+    getLocationSearchClient,
+    () => ''
+  );
+  const [manualTab, setManualTab] = useState<'buy' | 'check' | 'staff' | null>(null);
   const [amount, setAmount] = useState<number>(200);
   const [recipientName, setRecipientName] = useState<string>('');
   const [designId, setDesignId] = useState<GiftCardDesignId>('signature-gold');
   const [lang, setLang] = useState<'ko' | 'en'>('en');
-  const [voucherCode, setVoucherCode] = useState<string | null>(null);
-  const discountRate = 20; // 11월 프로모션 20%
+  const [discountRate, setDiscountRate] = useState<number>(20);
+  const [isPromoActive, setIsPromoActive] = useState<boolean>(true);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const cardParam = params.get('card');
-    const modeParam = params.get('mode');
-
-    if (cardParam) {
-      const normalized = normalizeGiftCardCode(cardParam);
-      if (normalized) {
-        setVoucherCode(normalized);
-        return;
-      }
-    }
-
-    if (modeParam === 'staff') {
-      setActiveTab('staff');
-    } else if (modeParam === 'check') {
-      setActiveTab('check');
-    }
+    let cancelled = false;
+    fetch('/api/promotions')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const active = Boolean(data.isPromoActive);
+        const rate = Number(data.sampleCalculation?.discountRate ?? 0);
+        setIsPromoActive(active);
+        setDiscountRate(active && rate > 0 ? rate : 0);
+      })
+      .catch(() => {
+        // Keep initial promo state on transient network error
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const searchParams = new URLSearchParams(locationSearch);
+  const cardParam = searchParams.get('card');
+  const modeParam = searchParams.get('mode');
+  const voucherCode = cardParam ? normalizeGiftCardCode(cardParam) : null;
+
+  const activeTab: 'buy' | 'check' | 'staff' =
+    manualTab ?? (modeParam === 'staff' ? 'staff' : modeParam === 'check' ? 'check' : 'buy');
 
   const openVoucher = (code: string) => {
     const normalized = normalizeGiftCardCode(code);
-    if (!normalized) return;
-    setVoucherCode(normalized);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('card', normalized);
-      url.searchParams.delete('mode');
-      window.history.replaceState({}, '', url.toString());
-    }
+    if (!normalized || typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('card', normalized);
+    url.searchParams.delete('mode');
+    window.history.replaceState({}, '', url.toString());
+    notifyUrlChange();
   };
 
   const exitVoucher = () => {
-    setVoucherCode(null);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      if (url.searchParams.has('card')) {
-        url.searchParams.delete('card');
-        window.history.replaceState({}, '', url.toString());
-      }
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('card')) {
+      url.searchParams.delete('card');
+      window.history.replaceState({}, '', url.toString());
+      notifyUrlChange();
     }
   };
 
-  const handleScrollToBuy = () => {
+  const handleSetTab = (tab: 'buy' | 'check' | 'staff') => {
     exitVoucher();
-    setActiveTab('buy');
+    setManualTab(tab);
+  };
+
+  const handleScrollToBuy = () => {
+    handleSetTab('buy');
     setTimeout(() => {
       const el = document.getElementById('buy-section');
       if (el) {
@@ -79,12 +112,14 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col bg-[#FBF9F5] text-[#1A1816]">
       {/* 1. 상단 프로모션 강조 배너 */}
-      <PromotionBanner onScrollToBuy={handleScrollToBuy} lang={lang} />
+      {isPromoActive && discountRate > 0 && (
+        <PromotionBanner onScrollToBuy={handleScrollToBuy} lang={lang} />
+      )}
 
       {/* 2. 네비게이션 헤더 */}
       <Header
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSetTab}
         lang={lang}
         setLang={setLang}
         onResetVoucher={exitVoucher}
@@ -101,7 +136,13 @@ export default function Home() {
               <div className="space-y-12 animate-in fade-in duration-300">
                 <div className="text-center max-w-2xl mx-auto space-y-3">
                   <span className="text-xs uppercase tracking-widest text-amber-800 font-bold">
-                    {lang === 'ko' ? '홀리데이 특별 혜택' : 'HOLIDAY SPECIAL'}
+                    {isPromoActive && discountRate > 0
+                      ? lang === 'ko'
+                        ? '홀리데이 특별 혜택'
+                        : 'HOLIDAY SPECIAL'
+                      : lang === 'ko'
+                        ? 'K-HEADSPA & WELLNESS'
+                        : 'SIGNATURE WELLNESS GIFT'}
                   </span>
                   <h1 className="font-serif-luxury text-4xl sm:text-5xl font-medium tracking-tight text-stone-900">
                     {lang === 'ko' ? 'K-headspa 디지털 기프트 카드' : 'Digital Gift Cards'}
@@ -156,8 +197,7 @@ export default function Home() {
       <Footer
         lang={lang}
         onOpenStaff={() => {
-          exitVoucher();
-          setActiveTab('staff');
+          handleSetTab('staff');
           if (typeof window !== 'undefined') {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }

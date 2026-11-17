@@ -175,3 +175,73 @@ export function generateCode128DataUrl(
   const encoded = encodeURIComponent(svg);
   return `data:image/svg+xml;charset=utf-8,${encoded}`;
 }
+
+/**
+ * 달러 금액이 유효한 유한수이며 센트(소수점 둘째 자리) 정밀도와 범위를 만족하는지 검증합니다.
+ */
+export function isValidDollarCents(
+  amount: unknown,
+  min = 0.01,
+  max = 100000
+): amount is number {
+  return (
+    typeof amount === 'number' &&
+    Number.isFinite(amount) &&
+    amount >= min &&
+    amount <= max &&
+    Math.abs(Math.round(amount * 100) - amount * 100) < 1e-6
+  );
+}
+
+/**
+ * 이메일 형식의 기본 유효성을 검증합니다.
+ */
+export function isValidEmail(email?: string): boolean {
+  return Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
+}
+
+/**
+ * 재발송 API의 선택적 수신자 이메일·전화번호 오입력을 검증하고 정규화합니다.
+ */
+export function validateResendContacts(
+  rawEmail?: string,
+  rawPhone?: string
+): {
+  valid: boolean;
+  error?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
+} {
+  const emailTrimmed = (rawEmail || '').trim();
+  if (emailTrimmed && !isValidEmail(emailTrimmed)) {
+    return {
+      valid: false,
+      error: '유효한 수신 이메일 형식이 아닙니다.',
+    };
+  }
+
+  const phoneTrimmed = (rawPhone || '').trim();
+  let normalizedPhone: string | undefined;
+  if (phoneTrimmed) {
+    normalizedPhone = normalizeUsPhone(phoneTrimmed);
+    if (!normalizedPhone) {
+      return {
+        valid: false,
+        error: '유효한 전화번호 형식이 아닙니다. (예: +1 201-555-0123)',
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    recipientEmail: emailTrimmed || undefined,
+    recipientPhone: normalizedPhone,
+  };
+}
+
+/**
+ * unknown 타입 예외에서 안전한 에러 메시지를 추출합니다.
+ */
+export function getErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}

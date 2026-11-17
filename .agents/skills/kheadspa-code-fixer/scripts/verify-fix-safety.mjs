@@ -14,13 +14,13 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === '--allowed' && argv[i + 1]) {
       allowed = argv[++i]
-        .split(',')
+        .split(/[\s,]+/)
         .map((s) => s.trim().replace(/\\/g, '/').replace(/^\.\//, ''))
         .filter(Boolean);
     } else if (arg.startsWith('--allowed=')) {
       allowed = arg
         .slice('--allowed='.length)
-        .split(',')
+        .split(/[\s,]+/)
         .map((s) => s.trim().replace(/\\/g, '/').replace(/^\.\//, ''))
         .filter(Boolean);
     } else if (arg === '--allow-api-drift') {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { Sparkles, Calendar, CheckCircle2, Shield } from 'lucide-react';
 import { GiftCardDesignId } from '@/types/gift-card';
 import { getCardDesign } from '@/lib/card-designs';
@@ -13,6 +13,16 @@ interface GiftCardHeroProps {
   lang: 'ko' | 'en';
 }
 
+const emptySubscribe = () => () => {};
+
+function getTwoYearExpiryClient(): string {
+  const today = new Date();
+  const expiryYear = today.getFullYear() + 2;
+  const expiryMonth = String(today.getMonth() + 1).padStart(2, '0');
+  const expiryDay = String(today.getDate()).padStart(2, '0');
+  return `${expiryYear}-${expiryMonth}-${expiryDay}`;
+}
+
 export default function GiftCardHero({
   amount,
   discountRate,
@@ -20,17 +30,13 @@ export default function GiftCardHero({
   designId,
   lang,
 }: GiftCardHeroProps) {
-  const chargeAmount = Math.round(amount * (1 - discountRate / 100));
-  const [expiryString, setExpiryString] = useState<string>('2028-11-30');
+  const chargeAmount = Math.round(amount * (1 - discountRate / 100) * 100) / 100;
+  const expiryString = useSyncExternalStore(
+    emptySubscribe,
+    getTwoYearExpiryClient,
+    () => '2 Years'
+  );
   const design = getCardDesign(designId);
-
-  useEffect(() => {
-    const today = new Date();
-    const expiryYear = today.getFullYear() + 2;
-    const expiryMonth = String(today.getMonth() + 1).padStart(2, '0');
-    const expiryDay = String(today.getDate()).padStart(2, '0');
-    setExpiryString(`${expiryYear}-${expiryMonth}-${expiryDay}`);
-  }, []);
 
   return (
     <div className="space-y-5">
@@ -64,19 +70,23 @@ export default function GiftCardHero({
             <span className="text-[11px] uppercase tracking-wider text-stone-300/80 font-medium">
               {lang === 'ko' ? '카드 충전 액면가 (Store Value)' : 'Stored Card Value'}
             </span>
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-200 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-400/30">
-              <Sparkles className="w-2.5 h-2.5" />
-              {discountRate}% {lang === 'ko' ? '특별 할인' : 'OFF'}
-            </span>
+            {discountRate > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-200 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-400/30">
+                <Sparkles className="w-2.5 h-2.5" />
+                {discountRate}% {lang === 'ko' ? '특별 할인' : 'OFF'}
+              </span>
+            )}
           </div>
           <div className="flex items-baseline gap-3 flex-wrap">
             <span className="font-serif-luxury text-4xl sm:text-5xl font-medium tracking-tight text-white">
               ${amount.toFixed(2)}
             </span>
-            <span className="text-xs text-stone-300/90">
-              ({lang === 'ko' ? '실제 결제액:' : 'You Pay:'}{' '}
-              <strong className="text-amber-300 font-bold font-mono">${chargeAmount.toFixed(2)}</strong>)
-            </span>
+            {discountRate > 0 && (
+              <span className="text-xs text-stone-300/90">
+                ({lang === 'ko' ? '실제 결제액:' : 'You Pay:'}{' '}
+                <strong className="text-amber-300 font-bold font-mono">${chargeAmount.toFixed(2)}</strong>)
+              </span>
+            )}
           </div>
         </div>
 

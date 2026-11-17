@@ -13,6 +13,7 @@ import {
 } from './firebase';
 import {
   generateCode128DataUrl,
+  isValidDollarCents,
   normalizeGiftCardCode,
   normalizeUsPhone,
 } from './barcode';
@@ -348,6 +349,13 @@ export async function redeemGiftCardAsync(params: {
   staffNote?: string;
 }): Promise<{ success: boolean; message: string; card?: GiftCard; remainingBalance?: number }> {
   const normalizedCode = normalizeGiftCardCode(params.code);
+
+  if (!isValidDollarCents(params.redeemAmount, 0.01, 10000)) {
+    return {
+      success: false,
+      message: '올바른 차감 금액을 입력해 주세요 (최소 $0.01, 소수점 둘째 자리까지).',
+    };
+  }
 
   // Firebase 연동 시 오직 Firebase에서만 처리하고 그 결과를 그대로 반환 (절대 로컬 Fallback 하지 않음!)
   if (isFirebaseConfigured()) {

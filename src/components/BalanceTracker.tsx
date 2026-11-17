@@ -12,7 +12,7 @@ import {
   ExternalLink,
   QrCode,
 } from 'lucide-react';
-import { normalizeGiftCardCode } from '@/lib/barcode';
+import { getErrorMessage, normalizeGiftCardCode } from '@/lib/barcode';
 
 const BOOKING_URL =
   process.env.NEXT_PUBLIC_BOOKING_URL || 'https://kheadspawellness.glossgenius.com';
@@ -73,8 +73,8 @@ export default function BalanceTracker({ lang, onOpenVoucher }: BalanceTrackerPr
 
       setCard(data.card);
       setTransactions(data.transactions || []);
-    } catch (err: any) {
-      setError(err.message || 'Unable to load gift card information.');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Unable to load gift card information.'));
       setCard(null);
       setTransactions([]);
     } finally {

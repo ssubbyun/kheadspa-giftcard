@@ -17,12 +17,38 @@ import {
 } from '../../src/lib/stripe';
 import {
   generateCode128DataUrl,
+  getErrorMessage,
+  isValidDollarCents,
+  isValidEmail,
   normalizeGiftCardCode,
   normalizeUsPhone,
+  validateResendContacts,
 } from '../../src/lib/barcode';
 import { dispatchGiftCardNotifications } from '../../src/lib/notifications';
+import { GiftCardDesignId } from '../../src/types/gift-card';
 
 const ALLOWED_LOCATIONS = ['Manhattan', 'Norwood', 'Fort Lee'] as const;
+type AllowedLocation = (typeof ALLOWED_LOCATIONS)[number];
+
+interface ApiBody {
+  faceValue?: unknown;
+  designId?: GiftCardDesignId;
+  buyerName?: string;
+  buyerEmail?: string;
+  buyerPhone?: string;
+  recipientType?: 'self' | 'gift';
+  recipientName?: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
+  message?: string;
+  scheduledDeliveryDate?: string;
+  stripePaymentIntentId?: string;
+  code?: string;
+  redeemAmount?: unknown;
+  location?: string;
+  staffName?: string;
+  staffNote?: string;
+}
 
 function maskName(name?: string): string {
   if (!name) return 'Guest';
@@ -76,14 +102,14 @@ function verifyStaffPin(headers: Record<string, string | string[] | undefined>):
   return { authorized: true };
 }
 
-function parseJsonBody(rawBody: unknown): Record<string, any> {
+function parseJsonBody(rawBody: unknown): ApiBody {
   if (typeof rawBody === 'string') {
-    return JSON.parse(rawBody || '{}');
+    return JSON.parse(rawBody || '{}') as ApiBody;
   }
   if (Buffer.isBuffer(rawBody)) {
-    return JSON.parse(rawBody.toString('utf-8') || '{}');
+    return JSON.parse(rawBody.toString('utf-8') || '{}') as ApiBody;
   }
-  return (rawBody as Record<string, any>) || {};
+  return (rawBody as ApiBody) || {};
 }
 
 export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async (req, res) => {
@@ -114,16 +140,31 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
   if (route === '/api/create-payment-intent' && method === 'POST') {
     try {
       const body = parseJsonBody(req.body);
-      const { faceValue, buyerEmail, buyerName, recipientType, recipientName } = body;
+      const {
+        faceValue,
+        buyerEmail,
+        buyerName,
+        recipientType,
+        recipientName,
+        recipientEmail,
+      } = body;
 
       const amount = Number(faceValue);
-      if (!amount || amount < 20 || amount > 3000) {
-        res.status(400).json({ error: '유효한 금액을 입력해 주세요 ($20 ~ $3,000)' });
+      if (!isValidDollarCents(amount, 20, 2000)) {
+        res.status(400).json({ error: '유효한 금액을 입력해 주세요 ($20 ~ $2,000)' });
         return;
       }
 
-      if (!buyerEmail || !buyerName) {
-        res.status(400).json({ error: '구매자 성함과 이메일은 필수 입력 항목입니다.' });
+      if (!buyerName || !String(buyerName).trim() || !isValidEmail(buyerEmail)) {
+        res.status(400).json({ error: '구매자 성함과 유효한 이메일은 필수 입력 항목입니다.' });
+        return;
+      }
+
+      if (
+        recipientType === 'gift' &&
+        (!recipientName || !String(recipientName).trim() || !isValidEmail(recipientEmail))
+      ) {
+        res.status(400).json({ error: '선물 받을 분의 성함과 유효한 이메일을 입력해 주세요.' });
         return;
       }
 
@@ -131,11 +172,11 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       const paymentIntent = await createStripePaymentIntent({
         amountInDollars: calculation.chargeAmount,
         faceValue: calculation.faceValue,
-        buyerEmail,
+        buyerEmail: String(buyerEmail).trim(),
         metadata: {
-          buyerName,
+          buyerName: String(buyerName).trim(),
           recipientType: recipientType || 'self',
-          recipientName: recipientName || buyerName,
+          recipientName: String(recipientName || buyerName).trim(),
           discountRate: `${calculation.discountRate}%`,
           discountAmount: `$${calculation.discountAmount}`,
         },
@@ -150,10 +191,10 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
         discountRate: calculation.discountRate,
         isPromoActive: calculation.isPromoActive,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error creating payment intent:', error);
       res.status(500).json({
-        error: error.message || 'Stripe 결제 인텐트 생성에 실패했습니다.',
+        error: getErrorMessage(error, 'Stripe 결제 인텐트 생성에 실패했습니다.'),
       });
     }
     return;
@@ -219,9 +260,9 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
         card: safeCard,
         transactions: safeTransactions,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({
-        error: err.message || '잔액 조회 중 오류가 발생했습니다.',
+        error: getErrorMessage(err, '잔액 조회 중 오류가 발생했습니다.'),
       });
     }
     return;
@@ -247,13 +288,21 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       } = body;
 
       const amount = Number(faceValue);
-      if (!amount || amount <= 0) {
-        res.status(400).json({ error: '유효한 금액이 아닙니다.' });
+      if (!isValidDollarCents(amount, 20, 2000)) {
+        res.status(400).json({ error: '유효한 금액이 아닙니다 ($20 ~ $2,000).' });
         return;
       }
 
-      if (!buyerName || !buyerEmail) {
-        res.status(400).json({ error: '구매자 정보가 누락되었습니다.' });
+      if (!buyerName || !String(buyerName).trim() || !isValidEmail(buyerEmail)) {
+        res.status(400).json({ error: '구매자 정보가 누락되었거나 이메일 형식이 올바르지 않습니다.' });
+        return;
+      }
+
+      if (
+        recipientType === 'gift' &&
+        (!recipientName || !String(recipientName).trim() || !isValidEmail(recipientEmail))
+      ) {
+        res.status(400).json({ error: '선물 받을 분의 성함과 유효한 이메일을 입력해 주세요.' });
         return;
       }
 
@@ -276,12 +325,12 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
         faceValue: calc.faceValue,
         paidAmount: calc.chargeAmount,
         designId,
-        buyerName,
-        buyerEmail,
+        buyerName: String(buyerName).trim(),
+        buyerEmail: String(buyerEmail).trim(),
         buyerPhone: normalizeUsPhone(buyerPhone),
         recipientType: recipientType || 'self',
-        recipientName,
-        recipientEmail,
+        recipientName: recipientName ? String(recipientName).trim() : undefined,
+        recipientEmail: recipientEmail ? String(recipientEmail).trim() : undefined,
         recipientPhone: normalizeUsPhone(recipientPhone),
         message,
         scheduledDeliveryDate,
@@ -316,10 +365,10 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
         delivery,
         message: '기프트 카드가 성공적으로 발급되었습니다. (유효기간: 구매일로부터 2년)',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error issuing gift card:', error);
       res.status(400).json({
-        error: error.message || '기프트 카드 발급 중 오류가 발생했습니다.',
+        error: getErrorMessage(error, '기프트 카드 발급 중 오류가 발생했습니다.'),
       });
     }
     return;
@@ -345,12 +394,17 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       }
 
       const amount = Number(redeemAmount);
-      if (!amount || amount <= 0) {
-        res.status(400).json({ error: '올바른 차감 금액을 입력해 주세요.' });
+      if (!isValidDollarCents(amount, 0.01, 10000)) {
+        res.status(400).json({
+          error: '올바른 차감 금액을 입력해 주세요 (최소 $0.01, 소수점 둘째 자리까지).',
+        });
         return;
       }
 
-      const validLocation = ALLOWED_LOCATIONS.includes(location) ? location : 'Manhattan';
+      const validLocation: AllowedLocation =
+        location && ALLOWED_LOCATIONS.includes(location as AllowedLocation)
+          ? (location as AllowedLocation)
+          : 'Manhattan';
       const sanitizedStaffName = (staffName || '').trim() || 'Authorized Staff';
 
       const result = await redeemGiftCardAsync({
@@ -385,10 +439,10 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
           : undefined,
         remainingBalance: result.remainingBalance,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error redeeming gift card:', error);
       res.status(500).json({
-        error: error.message || '차감 처리 중 오류가 발생했습니다.',
+        error: getErrorMessage(error, '차감 처리 중 오류가 발생했습니다.'),
       });
     }
     return;
@@ -407,15 +461,18 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
 
       const body = parseJsonBody(req.body);
       const code = normalizeGiftCardCode(body?.code || '');
-      const recipientEmail =
-        typeof body?.recipientEmail === 'string' ? body.recipientEmail.trim() : '';
-      const recipientPhone =
-        typeof body?.recipientPhone === 'string'
-          ? normalizeUsPhone(body.recipientPhone)
-          : undefined;
 
       if (!code) {
         res.status(400).json({ error: '기프트 카드 코드를 입력해 주세요.' });
+        return;
+      }
+
+      const contactCheck = validateResendContacts(
+        typeof body?.recipientEmail === 'string' ? body.recipientEmail : undefined,
+        typeof body?.recipientPhone === 'string' ? body.recipientPhone : undefined
+      );
+      if (!contactCheck.valid) {
+        res.status(400).json({ error: contactCheck.error });
         return;
       }
 
@@ -426,10 +483,10 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       }
 
       let targetCard = card;
-      if (recipientEmail || recipientPhone) {
+      if (contactCheck.recipientEmail || contactCheck.recipientPhone) {
         const updated = await updateGiftCardDeliveryAsync(code, {
-          ...(recipientEmail ? { recipientEmail } : {}),
-          ...(recipientPhone ? { recipientPhone } : {}),
+          ...(contactCheck.recipientEmail ? { recipientEmail: contactCheck.recipientEmail } : {}),
+          ...(contactCheck.recipientPhone ? { recipientPhone: contactCheck.recipientPhone } : {}),
         });
         if (updated) {
           targetCard = updated;
@@ -443,10 +500,10 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
         code: targetCard.code,
         delivery,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error resending gift card notifications:', error);
       res.status(500).json({
-        error: error.message || '바우처 재발송 중 오류가 발생했습니다.',
+        error: getErrorMessage(error, '바우처 재발송 중 오류가 발생했습니다.'),
       });
     }
     return;

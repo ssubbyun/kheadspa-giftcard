@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { redeemGiftCardAsync } from '@/lib/storage';
 import { verifyStaffAuth } from '@/lib/auth';
+import { getErrorMessage, isValidDollarCents } from '@/lib/barcode';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 const ALLOWED_LOCATIONS = ['Manhattan', 'Norwood', 'Fort Lee'] as const;
@@ -26,9 +27,9 @@ export async function POST(req: NextRequest) {
     }
 
     const amount = Number(redeemAmount);
-    if (!amount || amount <= 0) {
+    if (!isValidDollarCents(amount, 0.01, 10000)) {
       return NextResponse.json(
-        { error: '올바른 차감 금액을 입력해 주세요.' },
+        { error: '올바른 차감 금액을 입력해 주세요 (최소 $0.01, 소수점 둘째 자리까지).' },
         { status: 400, headers: NO_STORE_HEADERS }
       );
     }
@@ -73,10 +74,10 @@ export async function POST(req: NextRequest) {
       },
       { headers: NO_STORE_HEADERS }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error redeeming gift card:', error);
     return NextResponse.json(
-      { error: error.message || '차감 처리 중 오류가 발생했습니다.' },
+      { error: getErrorMessage(error, '차감 처리 중 오류가 발생했습니다.') },
       { status: 500, headers: NO_STORE_HEADERS }
     );
   }

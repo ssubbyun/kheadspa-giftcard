@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGiftCardByCodeAsync } from '@/lib/storage';
-import { generateCode128DataUrl, normalizeGiftCardCode } from '@/lib/barcode';
+import { generateCode128DataUrl, getErrorMessage, normalizeGiftCardCode } from '@/lib/barcode';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
@@ -74,9 +74,9 @@ export async function GET(req: NextRequest) {
       },
       { headers: NO_STORE_HEADERS }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json(
-      { error: err.message || '잔액 조회 중 오류가 발생했습니다.' },
+      { error: getErrorMessage(err, '잔액 조회 중 오류가 발생했습니다.') },
       { status: 500, headers: NO_STORE_HEADERS }
     );
   }

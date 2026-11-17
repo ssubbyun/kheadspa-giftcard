@@ -78,6 +78,33 @@
 
 ---
 
+## PITFALL-009: 센트 미만 소수점(`0.004`) 차감 및 비유한수 입력 방어 누락
+- **증상**: POS 차감 API 또는 `redeemGiftCardAsync`에 `0.004`를 전달하면 `amount > 0` 조건만 통과한 뒤 센트 반올림(`Math.round((200 - 0.004) * 100) / 100`)으로 잔액이 변하지 않으면서 `$0.00` 유령 차감 성공 트랜잭션이 기록됨.
+- **근본 원인**: `amount > 0`만 검사하고 `Number.isFinite` 및 센트 정밀도(소수점 둘째 자리, 최소 `$0.01`) 검증을 하지 않음.
+- **절대 금지**: 금액 검증에 `amount > 0` 단순 부등호만 사용 금지.
+- **올바른 패턴**: `src/lib/barcode.ts`의 `isValidDollarCents(amount, min, max)`를 사용하여 `redeemGiftCardAsync`, `redeemInFirebase`, `/api/create-payment-intent`, `/api/gift-cards/issue`, `/api/gift-cards/redeem` 및 `functions/src/index.ts` 양쪽 모두 동일 검증 적용.
+- **회귀 테스트 ID**: `QA-19`, `QA-22`
+
+---
+
+## PITFALL-010: 프로모션 종료 시 프론트엔드 할인율 하드코딩으로 인한 결제 금액 불일치
+- **증상**: `src/app/page.tsx`에 `const discountRate = 20`이 하드코딩되어 있어 11월 30일 프로모션 만료 후에도 화면에는 `$160` 할인가가 표시되지만 서버는 정가 `$200`으로 PaymentIntent를 생성함.
+- **근본 원인**: UI가 서버의 `/api/promotions` 활성 여부를 조회하지 않고 정적 상수로 할인 UI와 예상 결제액을 계산함.
+- **절대 금지**: 프론트엔드에서 프로모션 할인율을 고정 상수로만 유지하거나 `intentData.chargeAmount`를 무시 금지.
+- **올바른 패턴**: `page.tsx`가 마운트 시 `/api/promotions`를 조회해 `isPromoActive`와 `discountRate`를 동기화하고, `GiftCardHero.tsx`/`GiftCardForm.tsx`는 `discountRate > 0`일 때만 할인 배지/행을 표시하며 Stripe 확인 버튼은 `intentData.chargeAmount`를 사용.
+- **회귀 테스트 ID**: `QA-20`
+
+---
+
+## PITFALL-011: React 19 `react-hooks/set-state-in-effect`와 Next.js 16 프리렌더 동시 충족 패턴
+- **증상**: Next.js 16 프리렌더 오류(`PITFALL-001`)를 피하기 위해 `useEffect(() => { setState(...) }, [])`를 사용하면 React 19 ESLint 규칙 `react-hooks/set-state-in-effect` 에러가 발생함.
+- **근본 원인**: `useEffect` 본문 안에서 동기적으로 `setState`를 호출하면 불필요한 연쇄 렌더링이 유발됨.
+- **절대 금지**: `useEffect` 본문에서 동기 `setState(...)` 직접 호출 금지.
+- **올바른 패턴**: 브라우저 전용 값(`new Date()`, `window.location.search`)은 `useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot)`로 파생하고, 네트워크 요청(`fetch`) 결과는 비동기 `.then()` 콜백 안에서만 상태 반영 (`page.tsx`, `GiftCardHero.tsx`, `GiftCardForm.tsx` 참조).
+- **회귀 테스트 ID**: `QA-18`, `QA-23`
+
+---
+
 ## 신규 버그 사후 기록 템플릿 (Postmortem Template)
 새로운 버그를 해결할 때마다 아래 형식으로 이 파일에 추가하고 대응하는 회귀 테스트를 `run-qa-suite.mjs`에 등록하세요:
 

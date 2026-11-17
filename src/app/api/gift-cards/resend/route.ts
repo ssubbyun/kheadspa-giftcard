@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyStaffAuth } from '@/lib/auth';
 import { getGiftCardByCodeAsync, updateGiftCardDeliveryAsync } from '@/lib/storage';
 import { dispatchGiftCardNotifications } from '@/lib/notifications';
-import { normalizeGiftCardCode, normalizeUsPhone } from '@/lib/barcode';
+import {
+  getErrorMessage,
+  normalizeGiftCardCode,
+  validateResendContacts,
+} from '@/lib/barcode';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
@@ -18,12 +22,21 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const code = normalizeGiftCardCode(body?.code || '');
-    const recipientEmail = typeof body?.recipientEmail === 'string' ? body.recipientEmail.trim() : '';
-    const recipientPhone = typeof body?.recipientPhone === 'string' ? normalizeUsPhone(body.recipientPhone) : undefined;
 
     if (!code) {
       return NextResponse.json(
         { error: '기프트 카드 코드를 입력해 주세요.' },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    const contactCheck = validateResendContacts(
+      typeof body?.recipientEmail === 'string' ? body.recipientEmail : undefined,
+      typeof body?.recipientPhone === 'string' ? body.recipientPhone : undefined
+    );
+    if (!contactCheck.valid) {
+      return NextResponse.json(
+        { error: contactCheck.error },
         { status: 400, headers: NO_STORE_HEADERS }
       );
     }
@@ -37,10 +50,10 @@ export async function POST(req: NextRequest) {
     }
 
     let targetCard = card;
-    if (recipientEmail || recipientPhone) {
+    if (contactCheck.recipientEmail || contactCheck.recipientPhone) {
       const updated = await updateGiftCardDeliveryAsync(code, {
-        ...(recipientEmail ? { recipientEmail } : {}),
-        ...(recipientPhone ? { recipientPhone } : {}),
+        ...(contactCheck.recipientEmail ? { recipientEmail: contactCheck.recipientEmail } : {}),
+        ...(contactCheck.recipientPhone ? { recipientPhone: contactCheck.recipientPhone } : {}),
       });
       if (updated) {
         targetCard = updated;
@@ -57,10 +70,10 @@ export async function POST(req: NextRequest) {
       },
       { headers: NO_STORE_HEADERS }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error resending gift card notifications:', error);
     return NextResponse.json(
-      { error: error.message || '바우처 재발송 중 오류가 발생했습니다.' },
+      { error: getErrorMessage(error, '바우처 재발송 중 오류가 발생했습니다.') },
       { status: 500, headers: NO_STORE_HEADERS }
     );
   }

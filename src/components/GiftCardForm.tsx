@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import {
   CreditCard,
   Gift,
@@ -26,6 +26,9 @@ import {
 import confetti from 'canvas-confetti';
 import { GiftCard, GiftCardDesignId } from '@/types/gift-card';
 import { CARD_DESIGNS, getCardDesign } from '@/lib/card-designs';
+import { getErrorMessage } from '@/lib/barcode';
+
+const emptySubscribe = () => () => {};
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 const isValidPublishableKey =
@@ -148,8 +151,13 @@ function StripeCheckoutStep({
       }
 
       onSuccess(issueData.giftCard);
-    } catch (err: any) {
-      setErrorMsg(err.message || (lang === 'ko' ? '결제 처리 중 오류가 발생했습니다.' : 'An error occurred during payment.'));
+    } catch (err: unknown) {
+      setErrorMsg(
+        getErrorMessage(
+          err,
+          lang === 'ko' ? '결제 처리 중 오류가 발생했습니다.' : 'An error occurred during payment.'
+        )
+      );
     } finally {
       setIsConfirming(false);
     }
@@ -227,15 +235,12 @@ export default function GiftCardForm({
   // 예약 발송 옵션
   const [deliveryMode, setDeliveryMode] = useState<'immediate' | 'scheduled'>('immediate');
   const [scheduledDate, setScheduledDate] = useState('');
-  const [tomorrowEst, setTomorrowEst] = useState('');
-
-  useEffect(() => {
-    setTomorrowEst(getTomorrowEstDate());
-  }, []);
+  const tomorrowEst = useSyncExternalStore(emptySubscribe, getTomorrowEstDate, () => '');
 
   // PaymentIntent 단계 상태
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
+  const [authorizedCharge, setAuthorizedCharge] = useState<number | null>(null);
   const [isCreatingIntent, setIsCreatingIntent] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -252,6 +257,7 @@ export default function GiftCardForm({
     setIsCustom(false);
     setAmount(val);
     setClientSecret(null);
+    setAuthorizedCharge(null);
   };
 
   const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -259,6 +265,7 @@ export default function GiftCardForm({
     setCustomAmount(val);
     setIsCustom(true);
     setClientSecret(null);
+    setAuthorizedCharge(null);
   };
 
   // 1단계: 서버에 실제 Stripe PaymentIntent 생성 요청
@@ -323,6 +330,7 @@ export default function GiftCardForm({
           buyerEmail: buyerEmail.trim(),
           recipientType,
           recipientName: recipientType === 'gift' ? recipientName.trim() : buyerName.trim(),
+          recipientEmail: recipientType === 'gift' ? recipientEmail.trim() : buyerEmail.trim(),
         }),
       });
 
@@ -333,10 +341,15 @@ export default function GiftCardForm({
 
       setClientSecret(intentData.clientSecret);
       setPaymentIntentId(intentData.paymentIntentId);
-    } catch (err: any) {
+      setAuthorizedCharge(
+        typeof intentData.chargeAmount === 'number' ? intentData.chargeAmount : finalChargeAmount
+      );
+    } catch (err: unknown) {
       setFormError(
-        err.message ||
-          (lang === 'ko' ? '결제 초기화 중 오류가 발생했습니다.' : 'Error initializing payment.')
+        getErrorMessage(
+          err,
+          lang === 'ko' ? '결제 초기화 중 오류가 발생했습니다.' : 'Error initializing payment.'
+        )
       );
     } finally {
       setIsCreatingIntent(false);
@@ -385,9 +398,11 @@ export default function GiftCardForm({
                   } disabled:opacity-60`}
                 >
                   <span className="block text-base text-stone-900">${val}</span>
-                  <span className="block text-[11px] text-amber-700 font-medium">
-                    ${discounted} {lang === 'ko' ? '결제' : 'pay'}
-                  </span>
+                  {discountRate > 0 && (
+                    <span className="block text-[11px] text-amber-700 font-medium">
+                      ${discounted} {lang === 'ko' ? '결제' : 'pay'}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -721,15 +736,17 @@ export default function GiftCardForm({
             <span className="font-semibold text-stone-900">${currentFaceValue.toFixed(2)}</span>
           </div>
 
-          <div className="flex justify-between text-amber-700 font-medium">
-            <span className="flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              {lang === 'ko'
-                ? `11월 특별 프로모션 (${discountRate}% 할인)`
-                : `November Promo (${discountRate}% OFF)`}
-            </span>
-            <span>-${discountAmount.toFixed(2)}</span>
-          </div>
+          {discountRate > 0 && (
+            <div className="flex justify-between text-amber-700 font-medium">
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                {lang === 'ko'
+                  ? `11월 특별 프로모션 (${discountRate}% 할인)`
+                  : `November Promo (${discountRate}% OFF)`}
+              </span>
+              <span>-${discountAmount.toFixed(2)}</span>
+            </div>
+          )}
 
           <div className="flex justify-between items-baseline pt-2.5 border-t border-dashed border-stone-200">
             <div>
@@ -791,7 +808,7 @@ export default function GiftCardForm({
             <Elements stripe={stripePromise} options={{ clientSecret }}>
               <StripeCheckoutStep
                 paymentIntentId={paymentIntentId}
-                finalChargeAmount={finalChargeAmount}
+                finalChargeAmount={authorizedCharge ?? finalChargeAmount}
                 currentFaceValue={currentFaceValue}
                 designId={designId}
                 buyerName={buyerName.trim()}
@@ -807,11 +824,13 @@ export default function GiftCardForm({
                 onCancel={() => {
                   setClientSecret(null);
                   setPaymentIntentId(null);
+                  setAuthorizedCharge(null);
                 }}
                 onSuccess={(card) => {
                   setIssuedCard(card);
                   setClientSecret(null);
                   setPaymentIntentId(null);
+                  setAuthorizedCharge(null);
                   confetti({
                     particleCount: 100,
                     spread: 70,

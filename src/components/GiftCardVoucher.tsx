@@ -16,6 +16,7 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { getCardDesign } from '@/lib/card-designs';
+import { getErrorMessage } from '@/lib/barcode';
 
 const BOOKING_URL =
   process.env.NEXT_PUBLIC_BOOKING_URL || 'https://kheadspawellness.glossgenius.com';
@@ -77,9 +78,9 @@ export default function GiftCardVoucher({ code, lang, onBack }: GiftCardVoucherP
           setCard(data.card);
           setTransactions(data.transactions || []);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!cancelled) {
-          setError(err.message || 'Failed to load gift card voucher.');
+          setError(getErrorMessage(err, 'Failed to load gift card voucher.'));
           setCard(null);
         }
       } finally {

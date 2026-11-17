@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execFileSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { createRequire } from 'module';
 
 const ROOT_DIR = process.cwd();
@@ -310,6 +310,39 @@ async function runTests() {
     assert(due.some((c) => c.code === schedCard.code), 'Should appear on or after scheduled date');
   });
 
+  await test('QA-19', 'Reject sub-cent decimal and non-finite redemption amounts', async () => {
+    const subCard = await mod.issueGiftCard({
+      faceValue: 100,
+      paidAmount: 80,
+      buyerName: 'Cent Guard',
+      buyerEmail: 'cent@example.com',
+      recipientType: 'self',
+      stripePaymentIntentId: 'pi_qa_subcent_001',
+    });
+    for (const badAmt of [0.004, 10.999, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const res = await mod.redeemGiftCardAsync({
+        code: subCard.code,
+        redeemAmount: badAmt,
+        location: 'Manhattan',
+        staffName: 'Tester',
+      });
+      assert.strictEqual(res.success, false, 'Expected rejection for amount ' + badAmt);
+    }
+    const after = await mod.getGiftCardByCodeAsync(subCard.code);
+    assert.strictEqual(after.card.currentBalance, 100);
+  });
+
+  await test('QA-21', 'Validate resend contact inputs (reject invalid email or phone)', async () => {
+    assert.strictEqual(typeof mod.validateResendContacts, 'function', 'validateResendContacts must be exported');
+    assert.strictEqual(mod.validateResendContacts('', '').valid, true);
+    assert.strictEqual(mod.validateResendContacts('invalid-email', '').valid, false);
+    assert.strictEqual(mod.validateResendContacts('', '123').valid, false);
+    const ok = mod.validateResendContacts('guest@example.com', '201-555-0144');
+    assert.strictEqual(ok.valid, true);
+    assert.strictEqual(ok.recipientEmail, 'guest@example.com');
+    assert.strictEqual(ok.recipientPhone, '+12015550144');
+  });
+
   process.stdout.write(JSON.stringify(results));
 }
 
@@ -405,6 +438,56 @@ function runStaticChecks(invariants) {
       if (/useMemo\s*\([^)]*new\s+Date\s*\(/.test(src) || /useMemo\s*\(\s*\(\)\s*=>\s*getTomorrow/.test(src)) {
         throw new Error(`Unsafe new Date() inside useMemo in ${path.relative(ROOT_DIR, file)}`);
       }
+    }
+  });
+
+  // QA-20: Promotion expiry & frontend-server price sync check
+  check('QA-20', 'Frontend syncs live promotion discount from /api/promotions and server chargeAmount', () => {
+    const pageSrc = readText('src/app/page.tsx');
+    const heroSrc = readText('src/components/GiftCardHero.tsx');
+    const formSrc = readText('src/components/GiftCardForm.tsx');
+
+    if (/const\s+discountRate\s*=\s*20\b/.test(pageSrc)) {
+      throw new Error('src/app/page.tsx still hardcodes const discountRate = 20');
+    }
+    if (!pageSrc.includes('/api/promotions')) {
+      throw new Error('src/app/page.tsx must fetch /api/promotions to sync active promo status');
+    }
+    if (!heroSrc.includes('discountRate > 0')) {
+      throw new Error('GiftCardHero.tsx must guard promo badge and You Pay subtitle with discountRate > 0');
+    }
+    if (!formSrc.includes('discountRate > 0') || !formSrc.includes('intentData.chargeAmount')) {
+      throw new Error('GiftCardForm.tsx must guard discount row with discountRate > 0 and sync intentData.chargeAmount');
+    }
+  });
+
+  // QA-22: Server-side gift recipientEmail and $20~$2,000 cap parity
+  check('QA-22', 'Dual backends enforce $20~$2000 range and gift recipientEmail validation', () => {
+    const cpiSrc = readText('src/app/api/create-payment-intent/route.ts');
+    const issueSrc = readText('src/app/api/gift-cards/issue/route.ts');
+    const fnSrc = readText('functions/src/index.ts');
+
+    for (const [label, src] of [
+      ['create-payment-intent/route.ts', cpiSrc],
+      ['gift-cards/issue/route.ts', issueSrc],
+      ['functions/src/index.ts', fnSrc],
+    ]) {
+      if (!src.includes('isValidDollarCents(amount, 20, 2000)')) {
+        throw new Error(`${label} missing isValidDollarCents(amount, 20, 2000)`);
+      }
+      if (!src.includes('isValidEmail(')) {
+        throw new Error(`${label} missing isValidEmail validation`);
+      }
+    }
+  });
+
+  // QA-23: Repository-wide ESLint zero-error gate
+  check('QA-23', 'Repository-wide ESLint check passes with 0 errors', () => {
+    try {
+      execSync('pnpm lint', { cwd: ROOT_DIR, stdio: 'pipe', encoding: 'utf-8' });
+    } catch (err) {
+      const out = (err && (err.stdout || err.stderr)) ? String(err.stdout || err.stderr) : 'ESLint failed';
+      throw new Error(`pnpm lint failed:\n${out.slice(0, 1200)}`);
     }
   });
 

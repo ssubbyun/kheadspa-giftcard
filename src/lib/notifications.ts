@@ -1,6 +1,6 @@
 import { DeliveryStatus, GiftCard } from '@/types/gift-card';
 import { getCardDesign } from './card-designs';
-import { generateCode128DataUrl, normalizeUsPhone } from './barcode';
+import { generateCode128DataUrl, getErrorMessage, normalizeUsPhone } from './barcode';
 import {
   getAppBaseUrl,
   getTodayEstDateString,
@@ -235,8 +235,8 @@ async function sendResendEmail(params: {
     }
 
     return { sent: true };
-  } catch (err: any) {
-    return { sent: false, error: err?.message || 'Resend request failed' };
+  } catch (err: unknown) {
+    return { sent: false, error: getErrorMessage(err, 'Resend request failed') };
   }
 }
 
@@ -280,8 +280,8 @@ async function sendTwilioSms(params: {
     }
 
     return { sent: true };
-  } catch (err: any) {
-    return { sent: false, error: err?.message || 'Twilio request failed' };
+  } catch (err: unknown) {
+    return { sent: false, error: getErrorMessage(err, 'Twilio request failed') };
   }
 }
 

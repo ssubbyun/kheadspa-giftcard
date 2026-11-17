@@ -14,7 +14,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import BarcodeScannerModal from './BarcodeScannerModal';
-import { normalizeGiftCardCode } from '@/lib/barcode';
+import { getErrorMessage, normalizeGiftCardCode } from '@/lib/barcode';
 
 interface StaffTerminalProps {
   lang: 'ko' | 'en';
@@ -67,8 +67,8 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
       if (!res.ok) throw new Error(data.error || 'Card not found.');
       setCard(data.card);
       setRedeemAmount(Math.min(data.card.currentBalance, 150).toString());
-    } catch (err: any) {
-      setError(err.message || 'Card lookup failed');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Card lookup failed'));
       setCard(null);
     } finally {
       setIsSearching(false);
@@ -133,8 +133,8 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           : `Redeemed $${amt.toFixed(2)} successfully! (Remaining: $${data.remainingBalance.toFixed(2)})`
       );
       setCard(data.card);
-    } catch (err: any) {
-      setError(err.message || 'Redemption error');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Redemption error'));
     } finally {
       setIsRedeeming(false);
     }
@@ -185,8 +185,8 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
         setError(lang === 'ko' ? '발송 API 호출에 실패했습니다. 키와 주소를 확인해 주세요.' : 'Delivery API returned an error.');
       }
       setShowResend(false);
-    } catch (err: any) {
-      setError(err.message || 'Resend error');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Resend error'));
     } finally {
       setIsResending(false);
     }
@@ -240,7 +240,7 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
               </label>
               <select
                 value={location}
-                onChange={(e) => setLocation(e.target.value as any)}
+                onChange={(e) => setLocation(e.target.value as 'Manhattan' | 'Norwood' | 'Fort Lee')}
                 className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-[#FAF7F2] font-semibold text-stone-800 focus:outline-none"
               >
                 <option value="Manhattan">Manhattan Flagship</option>

@@ -22,3 +22,8 @@
 | `QA-16` | PII 마스킹 감사 | 공개 조회 API(`check/route.ts` & `functions/src/index.ts`) 응답 구조 점검 | `system-invariants.json`의 금지된 PII 키 미노출 확인 |
 | `QA-17` | 이중 백엔드 정합성 | 필수 6개 API 라우트 양쪽 존재 및 `no-store` 헤더 검사 | Next.js API 및 `functions/src/index.ts` 모두 경로 및 `no-store` 보유 |
 | `QA-18` | 프리렌더 & 실결제 | 클라이언트 `useMemo(..., new Date)` 금지 및 Stripe `pk_live_` 허용 검사 | 위험 패턴 0건, `pk_test_` + `pk_live_` 지원 확인 |
+| `QA-19` | 센트 정밀도 차감 | `0.004`, `10.999`, `NaN`, `Infinity` 차감 요청 | 모두 `success === false` 차단 및 잔액 `$100.00` 불변 |
+| `QA-20` | 프로모션 동기화 | `page.tsx`, `GiftCardHero`, `GiftCardForm` 동적 프로모션 연동 | 하드코딩 `const discountRate = 20` 제거, `/api/promotions` 및 `intentData.chargeAmount` 동기화 |
+| `QA-21` | 재발송 연락처 검증 | `validateResendContacts` 잘못된 이메일/전화번호 입력 검증 | 잘못된 형식 거부(`valid: false`), 빈 값 유지 허용, 정상 값 E.164 변환 |
+| `QA-22` | 금액 상한 & 선물 수신자 | `create-payment-intent` & `issue` 양쪽 백엔드 `$20~$2,000` 및 `recipientEmail` 검증 | `isValidDollarCents(amount, 20, 2000)` 및 `isValidEmail` 양쪽 동기화 |
+| `QA-23` | 전체 ESLint 게이트 | `pnpm lint` 실행 (`src/` 및 `functions/src/`) | ESLint 에러 및 경고 0건 (Exit Code 0) |

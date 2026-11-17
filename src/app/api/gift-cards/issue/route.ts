@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { calculatePromotionDiscount, issueGiftCard } from '@/lib/storage';
 import { verifySucceededPaymentIntent } from '@/lib/stripe';
 import { dispatchGiftCardNotifications } from '@/lib/notifications';
-import { normalizeUsPhone } from '@/lib/barcode';
+import {
+  getErrorMessage,
+  isValidDollarCents,
+  isValidEmail,
+  normalizeUsPhone,
+} from '@/lib/barcode';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
@@ -25,16 +30,26 @@ export async function POST(req: NextRequest) {
     } = body;
 
     const amount = Number(faceValue);
-    if (!amount || amount <= 0) {
+    if (!isValidDollarCents(amount, 20, 2000)) {
       return NextResponse.json(
-        { error: '유효한 금액이 아닙니다.' },
+        { error: '유효한 금액이 아닙니다 ($20 ~ $2,000).' },
         { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
-    if (!buyerName || !buyerEmail) {
+    if (!buyerName || !String(buyerName).trim() || !isValidEmail(buyerEmail)) {
       return NextResponse.json(
-        { error: '구매자 정보가 누락되었습니다.' },
+        { error: '구매자 정보가 누락되었거나 이메일 형식이 올바르지 않습니다.' },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    if (
+      recipientType === 'gift' &&
+      (!recipientName || !String(recipientName).trim() || !isValidEmail(recipientEmail))
+    ) {
+      return NextResponse.json(
+        { error: '선물 받을 분의 성함과 유효한 이메일을 입력해 주세요.' },
         { status: 400, headers: NO_STORE_HEADERS }
       );
     }
@@ -61,12 +76,12 @@ export async function POST(req: NextRequest) {
       faceValue: calc.faceValue,
       paidAmount: calc.chargeAmount,
       designId,
-      buyerName,
-      buyerEmail,
+      buyerName: String(buyerName).trim(),
+      buyerEmail: String(buyerEmail).trim(),
       buyerPhone: normalizeUsPhone(buyerPhone),
       recipientType: recipientType || 'self',
-      recipientName,
-      recipientEmail,
+      recipientName: recipientName ? String(recipientName).trim() : undefined,
+      recipientEmail: recipientEmail ? String(recipientEmail).trim() : undefined,
       recipientPhone: normalizeUsPhone(recipientPhone),
       message,
       scheduledDeliveryDate,
@@ -105,10 +120,10 @@ export async function POST(req: NextRequest) {
       },
       { headers: NO_STORE_HEADERS }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error issuing gift card:', error);
     return NextResponse.json(
-      { error: error.message || '기프트 카드 발급 중 오류가 발생했습니다.' },
+      { error: getErrorMessage(error, '기프트 카드 발급 중 오류가 발생했습니다.') },
       { status: 400, headers: NO_STORE_HEADERS }
     );
   }

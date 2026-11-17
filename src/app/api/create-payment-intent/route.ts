@@ -1,25 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { calculatePromotionDiscount } from '@/lib/storage';
 import { createStripePaymentIntent } from '@/lib/stripe';
+import { getErrorMessage, isValidDollarCents, isValidEmail } from '@/lib/barcode';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { faceValue, buyerEmail, buyerName, recipientType, recipientName } = body;
+    const {
+      faceValue,
+      buyerEmail,
+      buyerName,
+      recipientType,
+      recipientName,
+      recipientEmail,
+    } = body;
 
     const amount = Number(faceValue);
-    if (!amount || amount < 20 || amount > 3000) {
+    if (!isValidDollarCents(amount, 20, 2000)) {
       return NextResponse.json(
-        { error: '유효한 금액을 입력해 주세요 ($20 ~ $3,000)' },
+        { error: '유효한 금액을 입력해 주세요 ($20 ~ $2,000)' },
         { status: 400, headers: NO_STORE_HEADERS }
       );
     }
 
-    if (!buyerEmail || !buyerName) {
+    if (!buyerName || !String(buyerName).trim() || !isValidEmail(buyerEmail)) {
       return NextResponse.json(
-        { error: '구매자 성함과 이메일은 필수 입력 항목입니다.' },
+        { error: '구매자 성함과 유효한 이메일은 필수 입력 항목입니다.' },
+        { status: 400, headers: NO_STORE_HEADERS }
+      );
+    }
+
+    if (
+      recipientType === 'gift' &&
+      (!recipientName || !String(recipientName).trim() || !isValidEmail(recipientEmail))
+    ) {
+      return NextResponse.json(
+        { error: '선물 받을 분의 성함과 유효한 이메일을 입력해 주세요.' },
         { status: 400, headers: NO_STORE_HEADERS }
       );
     }
@@ -31,11 +49,11 @@ export async function POST(req: NextRequest) {
     const paymentIntent = await createStripePaymentIntent({
       amountInDollars: calculation.chargeAmount,
       faceValue: calculation.faceValue,
-      buyerEmail,
+      buyerEmail: String(buyerEmail).trim(),
       metadata: {
-        buyerName,
+        buyerName: String(buyerName).trim(),
         recipientType: recipientType || 'self',
-        recipientName: recipientName || buyerName,
+        recipientName: String(recipientName || buyerName).trim(),
         discountRate: `${calculation.discountRate}%`,
         discountAmount: `$${calculation.discountAmount}`,
       },
@@ -53,10 +71,10 @@ export async function POST(req: NextRequest) {
       },
       { headers: NO_STORE_HEADERS }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating payment intent:', error);
     return NextResponse.json(
-      { error: error.message || 'Stripe 결제 인텐트 생성에 실패했습니다.' },
+      { error: getErrorMessage(error, 'Stripe 결제 인텐트 생성에 실패했습니다.') },
       { status: 500, headers: NO_STORE_HEADERS }
     );
   }

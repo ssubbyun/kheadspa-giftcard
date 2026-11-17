@@ -3,7 +3,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, X, AlertCircle, Loader2 } from 'lucide-react';
 import jsQR from 'jsqr';
-import { normalizeGiftCardCode } from '@/lib/barcode';
+import { getErrorMessage, normalizeGiftCardCode } from '@/lib/barcode';
+
+interface DetectedBarcode {
+  rawValue?: string;
+}
+interface BarcodeDetectorInstance {
+  detect(image: HTMLVideoElement): Promise<DetectedBarcode[]>;
+}
+type BarcodeDetectorConstructor = new (options: {
+  formats: string[];
+}) => BarcodeDetectorInstance;
 
 interface BarcodeScannerModalProps {
   lang: 'ko' | 'en';
@@ -52,7 +62,9 @@ export default function BarcodeScannerModal({
         await video.play();
         setInitializing(false);
 
-        const DetectorCtor = (window as any).BarcodeDetector;
+        const DetectorCtor = (
+          window as unknown as { BarcodeDetector?: BarcodeDetectorConstructor }
+        ).BarcodeDetector;
         const detector = DetectorCtor
           ? new DetectorCtor({ formats: ['code_128', 'qr_code'] })
           : null;
@@ -99,12 +111,14 @@ export default function BarcodeScannerModal({
         };
 
         rafId = requestAnimationFrame(scanFrame);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (active) {
           setInitializing(false);
           setError(
-            err?.message ||
-              (lang === 'ko' ? '카메라를 시작할 수 없습니다.' : 'Unable to start camera.')
+            getErrorMessage(
+              err,
+              lang === 'ko' ? '카메라를 시작할 수 없습니다.' : 'Unable to start camera.'
+            )
           );
         }
       }

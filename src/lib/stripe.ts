@@ -5,7 +5,7 @@ const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
 // Stripe 인스턴스 (API 키가 설정되어 있어야 생성됨)
 export const stripe = stripeSecretKey
   ? new Stripe(stripeSecretKey, {
-      apiVersion: '2025-02-24.acacia' as any,
+      apiVersion: '2025-02-24.acacia' as Stripe.StripeConfig['apiVersion'],
       typescript: true,
     })
   : null;

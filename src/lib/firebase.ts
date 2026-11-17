@@ -1,6 +1,13 @@
 import { initializeApp, getApps, getApp, cert, App } from 'firebase-admin/app';
-import { getFirestore, FieldValue, Firestore } from 'firebase-admin/firestore';
+import {
+  getFirestore,
+  FieldValue,
+  Firestore,
+  Transaction,
+  QueryDocumentSnapshot,
+} from 'firebase-admin/firestore';
 import { GiftCard, GiftCardTransaction } from '@/types/gift-card';
+import { getErrorMessage, isValidDollarCents } from './barcode';
 
 // Firebase Admin 모듈러 초기화
 function initFirebase(): Firestore | null {
@@ -64,7 +71,7 @@ export async function issueGiftCardInFirebase(
   const txRef = db.collection('gift_card_transactions').doc(initialTx.id);
   const piLockRef = db.collection('processed_payment_intents').doc(card.stripePaymentIntentId);
 
-  await db.runTransaction(async (t: any) => {
+  await db.runTransaction(async (t: Transaction) => {
     const piDoc = await t.get(piLockRef);
     if (piDoc.exists) {
       throw new Error('이미 처리되어 카드가 발급된 결제건(PaymentIntent)입니다.');
@@ -139,7 +146,7 @@ export async function getTransactionsFromFirebase(cardId: string): Promise<GiftC
     .get();
 
   return snap.docs
-    .map((doc: any) => doc.data() as GiftCardTransaction)
+    .map((doc: QueryDocumentSnapshot) => doc.data() as GiftCardTransaction)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -155,11 +162,18 @@ export async function redeemInFirebase(params: {
     throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
   }
 
+  if (!isValidDollarCents(params.redeemAmount, 0.01, 10000)) {
+    return {
+      success: false,
+      message: '올바른 차감 금액을 입력해 주세요 (최소 $0.01, 소수점 둘째 자리까지).',
+    };
+  }
+
   const cardRef = db.collection('gift_cards').doc(params.code.toUpperCase());
   const txRef = db.collection('gift_card_transactions').doc(`tx-${Date.now()}`);
 
   try {
-    const result = await db.runTransaction(async (t: any) => {
+    const result = await db.runTransaction(async (t: Transaction) => {
       const doc = await t.get(cardRef);
       if (!doc.exists) {
         throw new Error('기프트 카드를 찾을 수 없습니다.');
@@ -225,10 +239,10 @@ export async function redeemInFirebase(params: {
       card: result.card,
       remainingBalance: result.remainingBalance,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       success: false,
-      message: err.message || '차감 처리 중 오류가 발생했습니다.',
+      message: getErrorMessage(err, '차감 처리 중 오류가 발생했습니다.'),
     };
   }
 }
@@ -276,7 +290,7 @@ export async function getPendingScheduledCardsFromFirebase(
     .get();
 
   return snap.docs
-    .map((doc: any) => doc.data() as GiftCard)
+    .map((doc: QueryDocumentSnapshot) => doc.data() as GiftCard)
     .filter(
       (card) =>
         card.status === 'ACTIVE' &&
