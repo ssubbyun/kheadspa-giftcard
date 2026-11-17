@@ -71,13 +71,6 @@ function saveStoreStrict(data: StoreData) {
 
 const localStore = loadStore();
 
-// 2년 유효기간 계산 헬퍼 함수
-export function calculateTwoYearExpiry(startDate: Date = new Date()): string {
-  const expiry = new Date(startDate);
-  expiry.setFullYear(expiry.getFullYear() + 2);
-  return expiry.toISOString();
-}
-
 // 프로모션 할인 계산 헬퍼
 export function calculatePromotionDiscount(amount: number): {
   faceValue: number;
@@ -147,7 +140,6 @@ async function seedInitialCard() {
   const demoCode = 'KSPA-HOLIDAY-2026';
   if (!localStore.cards[demoCode]) {
     const createdAt = '2026-11-10T10:00:00Z';
-    const expiresAt = calculateTwoYearExpiry(new Date(createdAt));
     const qrDataUrl = await QRCode.toDataURL(getVoucherUrl(demoCode), { margin: 1, width: 240 });
     const barcodeDataUrl = generateCode128DataUrl(demoCode);
 
@@ -172,7 +164,7 @@ async function seedInitialCard() {
       stripePaymentIntentId: 'pi_test_demo_holiday_200',
       promotionId: ACTIVE_PROMOTION.id,
       createdAt,
-      expiresAt,
+      expiresAt: null,
     };
 
     localStore.cards[demoCode] = demoCard;
@@ -228,11 +220,21 @@ export async function getGiftCardByCodeAsync(code: string): Promise<{ card?: Gif
   const card = localStore.cards[normalized];
   if (!card) return { transactions: [] };
 
-  if (card.status === 'ACTIVE' && new Date() > new Date(card.expiresAt)) {
-    card.status = 'EXPIRED';
-    saveStoreStrict(localStore);
+  let dirty = false;
+  if (card.expiresAt !== null) {
+    card.expiresAt = null;
+    dirty = true;
+  }
+
+  if (card.status === 'EXPIRED' && card.currentBalance > 0) {
+    card.status = 'ACTIVE';
+    dirty = true;
   } else if (card.status === 'ACTIVE' && card.currentBalance <= 0) {
     card.status = 'EXHAUSTED';
+    dirty = true;
+  }
+
+  if (dirty) {
     saveStoreStrict(localStore);
   }
 
@@ -263,7 +265,6 @@ export async function issueGiftCard(params: {
   const calc = calculatePromotionDiscount(params.faceValue);
   const code = generateGiftCardCode();
   const now = new Date();
-  const expiresAt = calculateTwoYearExpiry(now); // 정확히 2년 뒤 만료
   const voucherUrl = getVoucherUrl(code);
   const qrCodeDataUrl = await QRCode.toDataURL(voucherUrl, { margin: 1, width: 240 });
   const barcodeDataUrl = generateCode128DataUrl(code);
@@ -304,7 +305,7 @@ export async function issueGiftCard(params: {
     stripePaymentIntentId: params.stripePaymentIntentId,
     promotionId: calc.isPromoActive ? ACTIVE_PROMOTION.id : undefined,
     createdAt: now.toISOString(),
-    expiresAt, // 2-year expiration date
+    expiresAt: null, // Unlimited validity (no expiration)
   };
 
   const initialTx: GiftCardTransaction = {
@@ -368,12 +369,6 @@ export async function redeemGiftCardAsync(params: {
   const { card } = await getGiftCardByCodeAsync(normalizedCode);
   if (!card) {
     return { success: false, message: '기프트 카드를 찾을 수 없습니다. 번호를 다시 확인해 주세요.' };
-  }
-
-  if (card.status === 'EXPIRED' || new Date() > new Date(card.expiresAt)) {
-    card.status = 'EXPIRED';
-    saveStoreStrict(localStore);
-    return { success: false, message: '유효기간(구매일로부터 2년)이 만료된 기프트 카드입니다.' };
   }
 
   if (card.status !== 'ACTIVE' || card.currentBalance <= 0) {

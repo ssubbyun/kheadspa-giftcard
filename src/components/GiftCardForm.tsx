@@ -893,7 +893,7 @@ export default function GiftCardForm({
               {lang === 'ko' ? '주문 요약 영수증' : 'Atelier Order Summary'}
             </span>
             <span className="text-[11px] text-[#737874] font-medium">
-              {lang === 'ko' ? '유효기간 2년 포함' : '2-Year Validity Included'}
+              {lang === 'ko' ? '유효기간 무제한' : 'No Expiration · Zero Fees'}
             </span>
           </div>
 
@@ -1110,9 +1110,9 @@ export default function GiftCardForm({
                   <strong className="text-[#061910]">{issuedCard.recipientName}</strong>
                 </div>
                 <div>
-                  <span className="text-[#737874] block">{lang === 'ko' ? '유효기간:' : 'Valid Thru:'}</span>
+                  <span className="text-[#737874] block">{lang === 'ko' ? '유효기간:' : 'Validity:'}</span>
                   <strong className="text-[#1b2e24] font-mono text-[11px]">
-                    {new Date(issuedCard.expiresAt).toLocaleDateString()}
+                    {lang === 'ko' ? '무제한 (만료 없음)' : 'No Expiration'}
                   </strong>
                 </div>
               </div>

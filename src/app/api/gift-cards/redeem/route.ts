@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
               status: result.card.status,
               designId: result.card.designId || 'signature-gold',
               recipientName: result.card.recipientName,
-              expiresAt: result.card.expiresAt,
+              expiresAt: null,
             }
           : undefined,
         remainingBalance: result.remainingBalance,

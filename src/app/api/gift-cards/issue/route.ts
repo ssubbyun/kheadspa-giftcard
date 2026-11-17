@@ -113,10 +113,10 @@ export async function POST(req: NextRequest) {
           scheduledDeliveryDate: giftCard.scheduledDeliveryDate,
           deliveryStatus: delivery?.deliveryStatus || giftCard.deliveryStatus,
           createdAt: giftCard.createdAt,
-          expiresAt: giftCard.expiresAt,
+          expiresAt: null,
         },
         delivery,
-        message: '기프트 카드가 성공적으로 발급되었습니다. (유효기간: 구매일로부터 2년)',
+        message: '기프트 카드가 성공적으로 발급되었습니다. (유효기간: 무제한)',
       },
       { headers: NO_STORE_HEADERS }
     );

@@ -54,7 +54,7 @@ export interface GiftCard {
   stripePaymentIntentId?: string;
   promotionId?: string;
   createdAt: string;
-  expiresAt: string; // Exactly 2 years from createdAt
+  expiresAt: string | null; // null = Unlimited validity (Never expires)
 }
 
 export interface GiftCardTransaction {

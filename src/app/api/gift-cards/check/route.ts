@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       deliveryStatus: card.deliveryStatus,
       scheduledDeliveryDate: card.scheduledDeliveryDate,
       createdAt: card.createdAt,
-      expiresAt: card.expiresAt,
+      expiresAt: null,
     };
 
     const safeTransactions = transactions.map((tx) => ({

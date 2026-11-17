@@ -103,7 +103,7 @@ export async function issueGiftCardInFirebase(
   return card;
 }
 
-// 2. 기프트 카드 조회 (만료일 expiresAt 실시간 검증 및 상태 반영)
+// 2. 기프트 카드 조회 (무제한 유효기간 정규화 및 잔액 상태 반영)
 export async function getGiftCardFromFirebase(code: string): Promise<GiftCard | null> {
   if (!db) {
     throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
@@ -114,19 +114,24 @@ export async function getGiftCardFromFirebase(code: string): Promise<GiftCard | 
   if (!snap.exists) return null;
 
   const card = snap.data() as GiftCard;
-  const now = new Date();
+  const firestoreUpdates: Record<string, unknown> = {};
 
-  // 현재 시각과 expiresAt을 비교하여 만료 여부 실시간 판정 (지적사항 #4 해결)
-  if (card.status === 'ACTIVE' && now > new Date(card.expiresAt)) {
-    card.status = 'EXPIRED';
-    await docRef.update({
-      status: 'EXPIRED',
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+  if (card.expiresAt !== null) {
+    card.expiresAt = null;
+    firestoreUpdates.expiresAt = null;
+  }
+
+  if (card.status === 'EXPIRED' && card.currentBalance > 0) {
+    card.status = 'ACTIVE';
+    firestoreUpdates.status = 'ACTIVE';
   } else if (card.status === 'ACTIVE' && card.currentBalance <= 0) {
     card.status = 'EXHAUSTED';
+    firestoreUpdates.status = 'EXHAUSTED';
+  }
+
+  if (Object.keys(firestoreUpdates).length > 0) {
     await docRef.update({
-      status: 'EXHAUSTED',
+      ...firestoreUpdates,
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
@@ -150,7 +155,7 @@ export async function getTransactionsFromFirebase(cardId: string): Promise<GiftC
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-// 4. 원자적 차감 트랜잭션 (만료일 expiresAt 비교 포함 및 에러 시 로컬 Fallback 없이 즉시 반환)
+// 4. 원자적 차감 트랜잭션 (무제한 유효기간 정책 반영 및 에러 시 로컬 Fallback 없이 즉시 반환)
 export async function redeemInFirebase(params: {
   code: string;
   redeemAmount: number;
@@ -181,16 +186,15 @@ export async function redeemInFirebase(params: {
 
       const card = doc.data() as GiftCard;
       const now = new Date();
+      const cardUpdates: Record<string, unknown> = {};
 
-      // 지적사항 #4 해결: status 검사뿐만 아니라 실제 expiresAt 시각과 현재 시각 비교
-      if (card.status === 'EXPIRED' || now > new Date(card.expiresAt)) {
-        if (card.status !== 'EXPIRED') {
-          t.update(cardRef, {
-            status: 'EXPIRED',
-            updatedAt: FieldValue.serverTimestamp(),
-          });
-        }
-        throw new Error('유효기간(구매일로부터 2년)이 만료된 기프트 카드입니다.');
+      if (card.expiresAt !== null) {
+        card.expiresAt = null;
+        cardUpdates.expiresAt = null;
+      }
+
+      if (card.status === 'EXPIRED' && card.currentBalance > 0) {
+        card.status = 'ACTIVE';
       }
 
       if (card.status !== 'ACTIVE' || card.currentBalance <= 0) {
@@ -223,6 +227,7 @@ export async function redeemInFirebase(params: {
       };
 
       t.update(cardRef, {
+        ...cardUpdates,
         currentBalance: balanceAfter,
         status: card.status,
         updatedAt: FieldValue.serverTimestamp(),

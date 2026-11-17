@@ -105,6 +105,15 @@
 
 ---
 
+## PITFALL-012: 무제한 유효기간(`expiresAt: null`) 카드에 `new Date(card.expiresAt)` 호출 금지
+- **증상**: 기프트 카드 유효기간이 무제한(`expiresAt: null`)인 상태에서 이메일/UI 포맷터가 `new Date(card.expiresAt)`를 호출하면 `1970년 1월 1일`로 표시되거나, 백엔드 만료 체크(`now > new Date(null)`)가 모든 카드를 즉시 만료(`EXPIRED`) 상태로 오판함.
+- **근본 원인**: JavaScript에서 `new Date(null)`은 `1970-01-01T00:00:00.000Z`로 평가되며, 현재 시각은 항상 1970년보다 이후이므로 비교식이 `true`가 됨.
+- **절대 금지**: `storage.ts`, `firebase.ts`, `notifications.ts`, API 라우트 및 UI 컴포넌트에서 `new Date(card.expiresAt)` 호출이나 `2년` 만료 계산 로직 추가 금지.
+- **올바른 패턴**: 발급·조회·차감·이메일·UI 전 계층에서 `expiresAt: null`로 통일하고 `"No Expiration"` / `"무제한 (만료 없음)"` 정적 문구를 표시하며, 레거시 `EXPIRED` 카드 중 잔액이 남아 있으면 조회/차감 시 자동으로 `ACTIVE`로 복구 (`QA-06`, `QA-12`, `QA-25`).
+- **회귀 테스트 ID**: `QA-06`, `QA-12`, `QA-25`
+
+---
+
 ## 신규 버그 사후 기록 템플릿 (Postmortem Template)
 새로운 버그를 해결할 때마다 아래 형식으로 이 파일에 추가하고 대응하는 회귀 테스트를 `run-qa-suite.mjs`에 등록하세요:
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
+import React from 'react';
 import { Sparkles, Calendar, CheckCircle2, Shield, QrCode, Building2 } from 'lucide-react';
 import { GiftCardDesignId } from '@/types/gift-card';
 import { getCardDesign } from '@/lib/card-designs';
@@ -13,16 +13,6 @@ interface GiftCardHeroProps {
   lang: 'ko' | 'en';
 }
 
-const emptySubscribe = () => () => {};
-
-function getTwoYearExpiryClient(): string {
-  const today = new Date();
-  const expiryYear = today.getFullYear() + 2;
-  const expiryMonth = String(today.getMonth() + 1).padStart(2, '0');
-  const expiryDay = String(today.getDate()).padStart(2, '0');
-  return `${expiryYear}-${expiryMonth}-${expiryDay}`;
-}
-
 export default function GiftCardHero({
   amount,
   discountRate,
@@ -31,11 +21,6 @@ export default function GiftCardHero({
   lang,
 }: GiftCardHeroProps) {
   const chargeAmount = Math.round(amount * (1 - discountRate / 100) * 100) / 100;
-  const expiryString = useSyncExternalStore(
-    emptySubscribe,
-    getTwoYearExpiryClient,
-    () => '2 Years'
-  );
   const design = getCardDesign(designId);
 
   return (
@@ -123,7 +108,7 @@ export default function GiftCardHero({
             </div>
           </div>
 
-          {/* 하단 수신자 & 2년 유효기간 명시 */}
+          {/* 하단 수신자 & 무제한 유효기간 명시 */}
           <div className="relative z-10 flex justify-between items-end text-xs text-stone-200/85 border-t border-[#ffdea5]/20 pt-3">
             <div>
               <span className="text-[9px] uppercase tracking-[0.16em] text-stone-300/75 block">
@@ -137,10 +122,10 @@ export default function GiftCardHero({
             <div className="text-right">
               <span className="text-[9px] uppercase tracking-[0.16em] text-stone-300/75 flex items-center justify-end gap-1">
                 <Calendar className="w-2.5 h-2.5 text-[#e9c176]" />
-                {lang === 'ko' ? '구매일로부터 2년 유효' : '2-Year Validity'}
+                {lang === 'ko' ? '유효기간' : 'Validity'}
               </span>
               <span className="font-mono text-[10px] text-[#ffdea5] mt-0.5 block">
-                Valid thru {expiryString}
+                {lang === 'ko' ? '무제한 (만료 없음)' : 'No Expiration'}
               </span>
             </div>
           </div>
@@ -173,12 +158,12 @@ export default function GiftCardHero({
           <CheckCircle2 className="w-4 h-4 text-[#1b2e24] shrink-0 mt-0.5" />
           <div className="text-xs space-y-0.5">
             <strong className="text-[#061910] block">
-              {lang === 'ko' ? '2년 넉넉한 분할 사용 보장' : '2-Year Extended Multi-Visit Balance'}
+              {lang === 'ko' ? '유효기간 무제한 · 분할 사용 보장' : 'Never Expires · Multi-Visit Balance'}
             </strong>
             <span className="text-[#424844] leading-relaxed block">
               {lang === 'ko'
-                ? '유지비나 휴면 수수료 없이 구매일로부터 2년 동안 여러 방문에 걸쳐 나누어 사용할 수 있습니다.'
-                : 'Redeemable across multiple spa visits for 24 months with zero dormancy fees.'}
+                ? '만료일이나 휴면 수수료 없이 잔액 소진 시까지 언제든 나누어 사용할 수 있습니다.'
+                : 'Balances never expire and carry over across multiple spa visits with zero dormancy fees.'}
             </span>
           </div>
         </div>

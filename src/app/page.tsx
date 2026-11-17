@@ -209,8 +209,8 @@ export default function Home() {
 
                       <p className="text-sm sm:text-base text-[#424844] max-w-2xl leading-relaxed">
                         {lang === 'ko'
-                          ? '정밀 두피 진단부터 세라믹 워터폴 바신 테라피까지. 맨해튼·노우드·포트리 3개 지점에서 2년간 자유롭게 사용할 수 있는 바코드 디지털 바우처를 즉시 또는 예약 발송하세요.'
-                          : 'Gift restorative Korean scalp diagnosis, herbal steam infusion, and waterfall ceramic basin therapy across Manhattan, Norwood, and Fort Lee. Delivered via Email and SMS with a scannable 2-year pass.'}
+                          ? '정밀 두피 진단부터 세라믹 워터폴 바신 테라피까지. 맨해튼·노우드·포트리 3개 지점에서 유효기간 제한 없이 자유롭게 사용할 수 있는 바코드 디지털 바우처를 즉시 또는 예약 발송하세요.'
+                          : 'Gift restorative Korean scalp diagnosis, herbal steam infusion, and waterfall ceramic basin therapy across Manhattan, Norwood, and Fort Lee. Delivered via Email and SMS with a scannable pass that never expires.'}
                       </p>
                     </div>
 
@@ -235,8 +235,8 @@ export default function Home() {
                             <span className="w-1.5 h-1.5 rounded-full bg-[#775a19] shrink-0" />
                             <span>
                               {lang === 'ko'
-                                ? '구매일로부터 2년 유효기간 (전 지점 사용)'
-                                : '24-month validity across all 3 studios'}
+                                ? '유효기간 무제한 (전 지점 통합 사용)'
+                                : 'Unlimited validity across all 3 studios'}
                             </span>
                           </li>
                           <li className="flex items-center gap-2 text-[#775a19] font-semibold">
@@ -485,8 +485,8 @@ export default function Home() {
                         </h3>
                         <p className="text-[#424844] leading-relaxed">
                           {lang === 'ko'
-                            ? '모든 기프트 카드는 구매일로부터 2년(24개월) 동안 유효하며 별도의 유지 수수료가 없습니다.'
-                            : 'Every digital card remains valid for 2 full years from purchase across Manhattan, Norwood, and Fort Lee.'}
+                            ? '모든 기프트 카드는 유효기간이 무제한(만료 없음)이며, 별도의 유지비나 휴면 수수료 없이 언제든 사용하실 수 있습니다.'
+                            : 'Every digital gift card never expires and carries zero dormancy or maintenance fees across Manhattan, Norwood, and Fort Lee.'}
                         </p>
                       </div>
                     </div>

@@ -239,7 +239,7 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
         deliveryStatus: card.deliveryStatus,
         scheduledDeliveryDate: card.scheduledDeliveryDate,
         createdAt: card.createdAt,
-        expiresAt: card.expiresAt,
+        expiresAt: null,
       };
 
       const safeTransactions = transactions.map((tx) => ({
@@ -360,10 +360,10 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
           scheduledDeliveryDate: giftCard.scheduledDeliveryDate,
           deliveryStatus: delivery?.deliveryStatus || giftCard.deliveryStatus,
           createdAt: giftCard.createdAt,
-          expiresAt: giftCard.expiresAt,
+          expiresAt: null,
         },
         delivery,
-        message: '기프트 카드가 성공적으로 발급되었습니다. (유효기간: 구매일로부터 2년)',
+        message: '기프트 카드가 성공적으로 발급되었습니다. (유효기간: 무제한)',
       });
     } catch (error: unknown) {
       console.error('Error issuing gift card:', error);
@@ -434,7 +434,7 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
               status: result.card.status,
               designId: result.card.designId || 'signature-gold',
               recipientName: result.card.recipientName,
-              expiresAt: result.card.expiresAt,
+              expiresAt: null,
             }
           : undefined,
         remainingBalance: result.remainingBalance,

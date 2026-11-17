@@ -52,8 +52,8 @@ export default function PromotionBanner({ onScrollToBuy, lang }: PromotionBanner
             </strong>
             <span className="text-[#d1e8d9]/80 ml-2">
               {lang === 'ko'
-                ? '($200 액면가 구매 시 $160 결제 · 2년 유효)'
-                : '($200 Value for $160 · 2-Year Validity)'}
+                ? '($200 액면가 구매 시 $160 결제 · 유효기간 무제한)'
+                : '($200 Value for $160 · Never Expires)'}
             </span>
           </p>
         </div>

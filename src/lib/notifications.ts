@@ -74,11 +74,6 @@ function buildRecipientEmailHtml(card: GiftCard): string {
   const voucherUrl = getVoucherUrl(card.code);
   const bookingUrl = getBookingUrl();
   const appUrl = getAppBaseUrl();
-  const expiryFormatted = new Date(card.expiresAt).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
   const barcodeSrc = card.barcodeDataUrl || generateCode128DataUrl(card.code);
   const headline =
     card.recipientType === 'gift'
@@ -130,8 +125,8 @@ function buildRecipientEmailHtml(card: GiftCard): string {
             : ''
         }
         <tr>
-          <td style="padding:10px 0;color:#6E675F;">Valid through</td>
-          <td style="padding:10px 0;font-weight:600;color:#047857;">${escapeHtml(expiryFormatted)} (2-Year Validity)</td>
+          <td style="padding:10px 0;color:#6E675F;">Validity</td>
+          <td style="padding:10px 0;font-weight:600;color:#047857;">No Expiration (Unlimited Validity)</td>
         </tr>
       </table>
 
@@ -163,8 +158,8 @@ function buildRecipientEmailHtml(card: GiftCard): string {
 
       <div style="border-top:1px solid #EBE7DF;padding-top:18px;font-size:12px;line-height:1.6;color:#57534E;">
         <strong style="display:block;color:#1A1816;margin-bottom:4px;">How to use it:</strong>
-        Present this barcode or redemption code at check-in across our <strong>Manhattan</strong>, <strong>Norwood</strong>, and <strong>Fort Lee</strong> studios. Remaining balances carry over for 2 years.<br />
-        매장 방문 시 위 바코드 또는 16자리 코드를 카운터에 제시해 주세요. 잔액은 2년간 분할 사용 가능합니다.<br />
+        Present this barcode or redemption code at check-in across our <strong>Manhattan</strong>, <strong>Norwood</strong>, and <strong>Fort Lee</strong> studios. Remaining balances never expire and carry over across visits.<br />
+        매장 방문 시 위 바코드 또는 16자리 코드를 카운터에 제시해 주세요. 잔액은 유효기간 제한 없이 분할 사용 가능합니다.<br />
         <span style="display:inline-block;margin-top:8px;color:#78716C;">Check balance anytime at <a href="${escapeHtml(appUrl)}" style="color:#92400E;">${escapeHtml(appUrl)}</a></span>
       </div>
     </div>

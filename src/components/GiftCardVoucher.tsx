@@ -35,7 +35,7 @@ interface VoucherCard {
   deliveryStatus?: string;
   scheduledDeliveryDate?: string;
   createdAt: string;
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 interface VoucherTransaction {
@@ -244,14 +244,10 @@ export default function GiftCardVoucher({ code, lang, onBack }: GiftCardVoucherP
               <div className="text-right">
                 <span className="text-[10px] uppercase text-stone-400 flex items-center justify-end gap-1">
                   <Calendar className="w-3 h-3 text-[#e9c176]" />
-                  {lang === 'ko' ? '만료일 (2년 유효)' : 'Valid Through'}
+                  {lang === 'ko' ? '유효기간' : 'Validity'}
                 </span>
                 <span className="font-mono font-semibold text-[#ffdea5]">
-                  {new Date(card.expiresAt).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {lang === 'ko' ? '무제한 (만료 없음)' : 'No Expiration'}
                 </span>
               </div>
             </div>
@@ -323,7 +319,7 @@ export default function GiftCardVoucher({ code, lang, onBack }: GiftCardVoucherP
               <p>
                 Present this barcode or 16-character redemption code at check-in across{' '}
                 <strong>Manhattan</strong>, <strong>Norwood</strong>, and <strong>Fort Lee</strong>.
-                Balances may be redeemed across multiple visits within 2 years of purchase.
+                Balances may be redeemed across multiple visits with no expiration date.
               </p>
             </div>
           </div>

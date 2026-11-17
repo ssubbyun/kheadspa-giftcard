@@ -39,7 +39,7 @@ export default function Footer({ lang, onOpenStaff }: FooterProps) {
             <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#775a19]">
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>
-                {lang === 'ko' ? '2년 유효기간 · 전 지점 통합 사용' : '2-Year Validity · Redeemable Across All 3 Studios'}
+                {lang === 'ko' ? '유효기간 무제한 · 전 지점 통합 사용' : 'Never Expires · Redeemable Across All 3 Studios'}
               </span>
             </div>
           </div>
@@ -107,8 +107,8 @@ export default function Footer({ lang, onOpenStaff }: FooterProps) {
         <div className="pt-6 border-t border-[#ece0d8] flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#737874] gap-3">
           <span>
             {lang === 'ko'
-              ? '모든 기프트 카드는 구매일로부터 2년간 유효하며 전 지점에서 사용 가능합니다.'
-              : 'All digital gift cards are valid for 2 years from issue date and redeemable at all locations.'}
+              ? '모든 기프트 카드는 유효기간이 무제한이며 전 지점에서 사용 가능합니다.'
+              : 'All digital gift cards never expire and are redeemable at all locations.'}
           </span>
           <div className="flex items-center gap-3">
             <code>gift.kheadspawellness.com</code>

@@ -4,11 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Digital Gift Cards | K-headspa & wellness",
   description:
-    "Gift a restorative Korean head spa ritual in Manhattan, Norwood, and Fort Lee. Enjoy limited-time holiday promotion with 2-year validity. Powered by Stripe.",
+    "Gift a restorative Korean head spa ritual in Manhattan, Norwood, and Fort Lee. Enjoy limited-time holiday promotion with no expiration date. Powered by Stripe.",
   applicationName: "K-headspa & wellness",
   openGraph: {
     title: "Digital Gift Cards | K-headspa & wellness",
-    description: "20% OFF Holiday Gift Cards with 2-Year Validity across all locations.",
+    description: "20% OFF Holiday Gift Cards — Never Expires across all locations.",
     siteName: "K-headspa & wellness",
     type: "website",
   },

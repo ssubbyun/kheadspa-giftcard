@@ -28,7 +28,7 @@ interface SafeCardView {
   recipientMaskedName?: string;
   recipientName?: string;
   deliveryStatus?: string;
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 export default function StaffTerminal({ lang }: StaffTerminalProps) {
@@ -337,7 +337,7 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
             <div className="flex justify-between text-[11px] text-[#737874] border-t border-[#ece0d8] pt-2">
               <span>{lang === 'ko' ? '최초 충전액:' : 'Initial:'} ${card.initialBalance.toFixed(2)}</span>
               <span>
-                {lang === 'ko' ? '만료일:' : 'Expires:'} {new Date(card.expiresAt).toLocaleDateString()}
+                {lang === 'ko' ? '유효기간: 무제한' : 'Validity: No Expiration'}
               </span>
             </div>
 

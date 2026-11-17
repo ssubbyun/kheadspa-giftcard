@@ -107,7 +107,7 @@ async function runTests() {
   let issuedCode = '';
   const piId = 'pi_qa_test_0001';
 
-  await test('QA-06', 'Issue gift card with 2-year expiry, QR voucher URL, and 1D barcode', async () => {
+  await test('QA-06', 'Issue gift card with unlimited validity (expiresAt: null), QR voucher URL, and 1D barcode', async () => {
     const card = await mod.issueGiftCard({
       faceValue: 200,
       paidAmount: 160,
@@ -128,9 +128,7 @@ async function runTests() {
     assert.strictEqual(card.recipientPhone, '+12015550199');
     assert(card.qrCodeDataUrl && card.qrCodeDataUrl.startsWith('data:image/png;base64,'));
     assert(card.barcodeDataUrl && card.barcodeDataUrl.startsWith('data:image/svg+xml;base64,'));
-    const createdYear = new Date(card.createdAt).getFullYear();
-    const expiryYear = new Date(card.expiresAt).getFullYear();
-    assert.strictEqual(expiryYear - createdYear, 2);
+    assert.strictEqual(card.expiresAt, null, 'Gift card must have unlimited validity (expiresAt: null)');
   });
 
   await test('QA-07', 'Prevent duplicate issuance for same PaymentIntent ID', async () => {
@@ -225,7 +223,7 @@ async function runTests() {
     assert.strictEqual(blocked.success, false);
   });
 
-  await test('QA-12', 'Auto-expire card past expiresAt and block redemption', async () => {
+  await test('QA-12', 'Unlimited validity: legacy past expiresAt never expires while CANCELLED status blocks redemption', async () => {
     const expCard = await mod.issueGiftCard({
       faceValue: 100,
       paidAmount: 80,
@@ -237,6 +235,7 @@ async function runTests() {
 
     const storePath = path.join(process.cwd(), 'data', 'gift_cards_store.json');
     const storeJson = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+    storeJson.cards[expCard.code].createdAt = '2015-01-01T00:00:00.000Z';
     storeJson.cards[expCard.code].expiresAt = '2020-01-01T00:00:00.000Z';
     fs.writeFileSync(storePath, JSON.stringify(storeJson, null, 2), 'utf-8');
 
@@ -245,7 +244,25 @@ async function runTests() {
     await new Promise((r) => setTimeout(r, 40));
 
     const checked = await mod.getGiftCardByCodeAsync(expCard.code);
-    assert.strictEqual(checked.card.status, 'EXPIRED');
+    assert.strictEqual(checked.card.status, 'ACTIVE');
+    assert.strictEqual(checked.card.expiresAt, null);
+
+    const redeemOk = await mod.redeemGiftCardAsync({
+      code: expCard.code,
+      redeemAmount: 10,
+      location: 'Manhattan',
+      staffName: 'Tester',
+    });
+    assert.strictEqual(redeemOk.success, true);
+    assert.strictEqual(redeemOk.remainingBalance, 90);
+
+    const cancelledJson = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+    cancelledJson.cards[expCard.code].status = 'CANCELLED';
+    fs.writeFileSync(storePath, JSON.stringify(cancelledJson, null, 2), 'utf-8');
+
+    delete require.cache[require.resolve('./bundle.cjs')];
+    mod = require('./bundle.cjs');
+    await new Promise((r) => setTimeout(r, 40));
 
     const redeemBlocked = await mod.redeemGiftCardAsync({
       code: expCard.code,
@@ -513,6 +530,21 @@ function runStaticChecks(invariants) {
       const src = fs.readFileSync(file, 'utf-8');
       if (src.includes('cdn.tailwindcss.com') || src.includes('lh3.googleusercontent.com/aida')) {
         throw new Error(`External Stitch CDN script or mockup URL leaked into ${path.relative(ROOT_DIR, file)}`);
+      }
+    }
+  });
+
+  // QA-25: Unlimited gift card validity check (zero 2-year copy or new Date(expiresAt))
+  check('QA-25', 'Zero leftover 2-year expiry copy or unsafe new Date(card.expiresAt) calls', () => {
+    const tsFiles = [
+      ...listFilesRecursive(path.join(ROOT_DIR, 'src'), ['.ts', '.tsx']),
+      ...listFilesRecursive(path.join(ROOT_DIR, 'functions', 'src'), ['.ts']),
+    ];
+    const forbiddenPattern = /2-Year|2-year|2 years|24-month|24개월|2년|2년간|new Date\([^)]*expiresAt\)/;
+    for (const file of tsFiles) {
+      const src = fs.readFileSync(file, 'utf-8');
+      if (forbiddenPattern.test(src)) {
+        throw new Error(`Legacy 2-year expiry reference or new Date(expiresAt) found in ${path.relative(ROOT_DIR, file)}`);
       }
     }
   });

@@ -33,7 +33,7 @@ interface SafeGiftCard {
   qrCodeDataUrl?: string;
   barcodeDataUrl?: string;
   createdAt: string;
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 interface SafeTransaction {
@@ -94,8 +94,8 @@ export default function BalanceTracker({ lang, onOpenVoucher }: BalanceTrackerPr
         </h2>
         <p className="text-xs sm:text-sm text-[#424844] max-w-md mx-auto leading-relaxed">
           {lang === 'ko'
-            ? '소지하신 16자리 기프트 카드 번호를 입력하시면 잔여 금액, 바코드 바우처 및 유효기간을 확인하실 수 있습니다.'
-            : 'Enter your 16-character gift card code to view remaining balance, checkout barcode, and 2-year expiration date.'}
+            ? '소지하신 16자리 기프트 카드 번호를 입력하시면 잔여 금액, 바코드 바우처 및 사용 내역을 확인하실 수 있습니다.'
+            : 'Enter your 16-character gift card code to view remaining balance, checkout barcode, and transaction history.'}
         </p>
       </div>
 
@@ -172,8 +172,7 @@ export default function BalanceTracker({ lang, onOpenVoucher }: BalanceTrackerPr
                 <div className="text-[11px] text-[#d1e8d9]/80 flex items-center gap-1 font-mono">
                   <Calendar className="w-3 h-3 text-[#e9c176]" />
                   <span>
-                    {lang === 'ko' ? '만료일:' : 'Expires:'}{' '}
-                    {new Date(card.expiresAt).toLocaleDateString()}
+                    {lang === 'ko' ? '유효기간: 무제한' : 'Validity: No Expiration'}
                   </span>
                 </div>
               </div>
