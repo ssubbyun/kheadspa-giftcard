@@ -1,3 +1,20 @@
+export type GiftCardDesignId =
+  | 'signature-gold'
+  | 'holiday-emerald'
+  | 'happy-birthday'
+  | 'thank-you'
+  | 'congratulations'
+  | 'parents-day'
+  | 'wellness-retreat'
+  | 'for-you-rose';
+
+export type DeliveryStatus =
+  | 'SENT'
+  | 'PENDING_SCHEDULED'
+  | 'PARTIAL'
+  | 'SKIPPED_NO_CREDENTIALS'
+  | 'FAILED';
+
 export interface Promotion {
   id: string;
   titleKo: string;
@@ -19,13 +36,21 @@ export interface GiftCard {
   paidAmount: number; // Actual Stripe charged amount, e.g. $160
   currency: 'USD';
   status: 'ACTIVE' | 'EXHAUSTED' | 'EXPIRED' | 'CANCELLED';
+  designId?: GiftCardDesignId;
   buyerName: string;
   buyerEmail: string;
+  buyerPhone?: string;
   recipientType: 'self' | 'gift';
   recipientName?: string;
   recipientEmail?: string;
+  recipientPhone?: string;
   message?: string;
+  scheduledDeliveryDate?: string; // YYYY-MM-DD (EST)
+  deliveryStatus?: DeliveryStatus;
+  emailSentAt?: string;
+  smsSentAt?: string;
   qrCodeDataUrl?: string;
+  barcodeDataUrl?: string;
   stripePaymentIntentId?: string;
   promotionId?: string;
   createdAt: string;

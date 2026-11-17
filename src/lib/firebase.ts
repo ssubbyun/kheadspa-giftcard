@@ -8,26 +8,37 @@ function initFirebase(): Firestore | null {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-  if (projectId && clientEmail && privateKey) {
-    privateKey = privateKey.replace(/\\n/g, '\n');
+  const hasExplicitCert = Boolean(projectId && clientEmail && privateKey);
+  const isCloudRuntime = Boolean(
+    process.env.FUNCTION_TARGET || process.env.K_SERVICE || process.env.FIREBASE_CONFIG
+  );
 
-    let app: App;
-    if (getApps().length > 0) {
-      app = getApp();
-    } else {
-      app = initializeApp({
-        credential: cert({
-          projectId,
-          clientEmail,
-          privateKey,
-        }),
-      });
-    }
-
-    return getFirestore(app);
+  if (!hasExplicitCert && !isCloudRuntime) {
+    return null;
   }
 
-  return null;
+  if (getApps().length > 0) {
+    return getFirestore(getApp());
+  }
+
+  let app: App;
+  if (hasExplicitCert && privateKey) {
+    privateKey = privateKey.replace(/\\n/g, '\n');
+    app = initializeApp({
+      credential: cert({
+        projectId,
+        clientEmail,
+        privateKey,
+      }),
+    });
+  } else {
+    // Cloud Functions / Cloud Run 런타임에서는 Application Default Credentials 사용
+    app = initializeApp();
+  }
+
+  const firestore = getFirestore(app);
+  firestore.settings({ ignoreUndefinedProperties: true });
+  return firestore;
 }
 
 export const db: Firestore | null = initFirebase();
@@ -125,10 +136,11 @@ export async function getTransactionsFromFirebase(cardId: string): Promise<GiftC
   const snap = await db
     .collection('gift_card_transactions')
     .where('giftCardId', '==', cardId)
-    .orderBy('createdAt', 'desc')
     .get();
 
-  return snap.docs.map((doc: any) => doc.data() as GiftCardTransaction);
+  return snap.docs
+    .map((doc: any) => doc.data() as GiftCardTransaction)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 // 4. 원자적 차감 트랜잭션 (만료일 expiresAt 비교 포함 및 에러 시 로컬 Fallback 없이 즉시 반환)
@@ -220,3 +232,56 @@ export async function redeemInFirebase(params: {
     };
   }
 }
+
+// 5. 기프트 카드 발송 상태 및 연락처 메타데이터 업데이트
+export async function updateGiftCardMetadataInFirebase(
+  code: string,
+  updates: Partial<GiftCard>
+): Promise<GiftCard | null> {
+  if (!db) {
+    throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
+  }
+
+  const cardRef = db.collection('gift_cards').doc(code.trim().toUpperCase());
+  const snap = await cardRef.get();
+  if (!snap.exists) return null;
+
+  const cleanUpdates: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(updates)) {
+    if (v !== undefined) {
+      cleanUpdates[k] = v;
+    }
+  }
+
+  await cardRef.update({
+    ...cleanUpdates,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  const updatedSnap = await cardRef.get();
+  return updatedSnap.exists ? (updatedSnap.data() as GiftCard) : null;
+}
+
+// 6. 예약 발송 대기 중(PENDING_SCHEDULED)이면서 발송일(maxDateEst)이 도래한 카드 목록 조회
+export async function getPendingScheduledCardsFromFirebase(
+  maxDateEst: string
+): Promise<GiftCard[]> {
+  if (!db) {
+    throw new Error('Firebase 데이터베이스가 연결되어 있지 않습니다.');
+  }
+
+  const snap = await db
+    .collection('gift_cards')
+    .where('deliveryStatus', '==', 'PENDING_SCHEDULED')
+    .get();
+
+  return snap.docs
+    .map((doc: any) => doc.data() as GiftCard)
+    .filter(
+      (card) =>
+        card.status === 'ACTIVE' &&
+        Boolean(card.scheduledDeliveryDate) &&
+        (card.scheduledDeliveryDate as string) <= maxDateEst
+    );
+}
+

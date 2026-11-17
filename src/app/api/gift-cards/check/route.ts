@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGiftCardByCodeAsync } from '@/lib/storage';
+import { generateCode128DataUrl, normalizeGiftCardCode } from '@/lib/barcode';
+
+const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
 // 이름 마스킹 헬퍼 (예: "김민서" -> "김*서", "Sarah Kim" -> "Sa***m")
 function maskName(name?: string): string {
-  if (!name) return '고객';
+  if (!name) return 'Guest';
   const trimmed = name.trim();
   if (trimmed.length <= 1) return trimmed;
   if (trimmed.length === 2) return `${trimmed[0]}*`;
@@ -12,12 +15,13 @@ function maskName(name?: string): string {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const code = searchParams.get('code');
+  const rawCode = searchParams.get('code');
+  const code = normalizeGiftCardCode(rawCode || '');
 
   if (!code) {
     return NextResponse.json(
       { error: '기프트 카드 코드를 입력해 주세요.' },
-      { status: 400 }
+      { status: 400, headers: NO_STORE_HEADERS }
     );
   }
 
@@ -27,18 +31,24 @@ export async function GET(req: NextRequest) {
     if (!card) {
       return NextResponse.json(
         { error: '일치하는 기프트 카드를 찾을 수 없습니다. 16자리 번호를 다시 확인해 주세요.' },
-        { status: 404 }
+        { status: 404, headers: NO_STORE_HEADERS }
       );
     }
 
-    // 지적사항 #5 해결: 개인정보(이메일, 실명 전체, 메시지, Stripe 결제 ID, 직원 실명 등)를 제거하고 잔액 확인에 필요한 최소 필드만 반환
+    // 개인정보(이메일, 전화번호, 실명 전체, 메시지 등)를 마스킹/제외하고 바우처 및 잔액 확인 필드만 반환
     const safeCard = {
       code: card.code,
       initialBalance: card.initialBalance,
       currentBalance: card.currentBalance,
       currency: card.currency,
       status: card.status,
+      designId: card.designId || 'signature-gold',
       recipientMaskedName: maskName(card.recipientName),
+      senderMaskedName: maskName(card.buyerName),
+      qrCodeDataUrl: card.qrCodeDataUrl,
+      barcodeDataUrl: card.barcodeDataUrl || generateCode128DataUrl(card.code),
+      deliveryStatus: card.deliveryStatus,
+      scheduledDeliveryDate: card.scheduledDeliveryDate,
       createdAt: card.createdAt,
       expiresAt: card.expiresAt,
     };
@@ -52,19 +62,22 @@ export async function GET(req: NextRequest) {
       location: tx.location,
       summary:
         tx.transactionType === 'INITIAL_PURCHASE'
-          ? '기프트 카드 충전 발급'
-          : tx.staffNote || '매장 시술 차감',
+          ? 'Gift Card Issued / 기프트 카드 충전 발급'
+          : tx.staffNote || 'Spa Service Redemption / 매장 시술 차감',
       createdAt: tx.createdAt,
     }));
 
-    return NextResponse.json({
-      card: safeCard,
-      transactions: safeTransactions,
-    });
+    return NextResponse.json(
+      {
+        card: safeCard,
+        transactions: safeTransactions,
+      },
+      { headers: NO_STORE_HEADERS }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || '잔액 조회 중 오류가 발생했습니다.' },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_HEADERS }
     );
   }
 }

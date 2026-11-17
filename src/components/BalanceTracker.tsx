@@ -9,10 +9,17 @@ import {
   ArrowUpRight,
   AlertCircle,
   Loader2,
+  ExternalLink,
+  QrCode,
 } from 'lucide-react';
+import { normalizeGiftCardCode } from '@/lib/barcode';
+
+const BOOKING_URL =
+  process.env.NEXT_PUBLIC_BOOKING_URL || 'https://kheadspawellness.glossgenius.com';
 
 interface BalanceTrackerProps {
   lang: 'ko' | 'en';
+  onOpenVoucher?: (code: string) => void;
 }
 
 interface SafeGiftCard {
@@ -21,7 +28,10 @@ interface SafeGiftCard {
   currentBalance: number;
   currency: string;
   status: 'ACTIVE' | 'EXHAUSTED' | 'EXPIRED' | 'CANCELLED';
+  designId?: string;
   recipientMaskedName: string;
+  qrCodeDataUrl?: string;
+  barcodeDataUrl?: string;
   createdAt: string;
   expiresAt: string;
 }
@@ -37,8 +47,8 @@ interface SafeTransaction {
   createdAt: string;
 }
 
-export default function BalanceTracker({ lang }: BalanceTrackerProps) {
-  const [code, setCode] = useState('KSPA-HOLIDAY-2026');
+export default function BalanceTracker({ lang, onOpenVoucher }: BalanceTrackerProps) {
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [card, setCard] = useState<SafeGiftCard | null>(null);
   const [transactions, setTransactions] = useState<SafeTransaction[]>([]);
@@ -46,23 +56,25 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
 
   const handleLookup = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!code.trim()) return;
+    const normalized = normalizeGiftCardCode(code);
+    if (!normalized) return;
 
+    setCode(normalized);
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/gift-cards/check?code=${encodeURIComponent(code.trim())}`);
+      const res = await fetch(`/api/gift-cards/check?code=${encodeURIComponent(normalized)}`);
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || '조회에 실패했습니다.');
+        throw new Error(data.error || 'Gift card lookup failed.');
       }
 
       setCard(data.card);
       setTransactions(data.transactions || []);
     } catch (err: any) {
-      setError(err.message || '카드 정보를 불러오지 못했습니다.');
+      setError(err.message || 'Unable to load gift card information.');
       setCard(null);
       setTransactions([]);
     } finally {
@@ -82,8 +94,8 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
         </h2>
         <p className="text-xs text-stone-600 max-w-md mx-auto">
           {lang === 'ko'
-            ? '소지하신 16자리 기프트 카드 번호를 입력하시면 잔여 금액과 구매일로부터 2년 유효기간을 확인하실 수 있습니다.'
-            : 'Enter your 16-character gift card code to check remaining balance and your 2-year expiration date.'}
+            ? '소지하신 16자리 기프트 카드 번호를 입력하시면 잔여 금액, 바코드 바우처 및 유효기간을 확인하실 수 있습니다.'
+            : 'Enter your 16-character gift card code to view remaining balance, checkout barcode, and 2-year expiration date.'}
         </p>
       </div>
 
@@ -103,27 +115,11 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
             />
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !code.trim()}
               className="px-6 py-3 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               <span>{lang === 'ko' ? '조회하기' : 'Check'}</span>
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] text-stone-500 pt-1">
-            <span>
-              {lang === 'ko' ? '데모 테스트 코드:' : 'Demo Code:'} <code>KSPA-HOLIDAY-2026</code>
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setCode('KSPA-HOLIDAY-2026');
-                setTimeout(() => handleLookup(), 50);
-              }}
-              className="text-amber-800 font-semibold hover:underline"
-            >
-              {lang === 'ko' ? '데모 카드 자동 입력' : 'Use Demo Code'}
             </button>
           </div>
         </form>
@@ -154,7 +150,7 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                   </span>
                   <span>·</span>
                   <span>
-                    {lang === 'ko' ? '소지자:' : 'Recipient:'} {card.recipientMaskedName} 님
+                    {lang === 'ko' ? '소지자:' : 'Recipient:'} {card.recipientMaskedName}
                   </span>
                 </div>
               </div>
@@ -165,8 +161,8 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                     card.status === 'ACTIVE'
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
                       : card.status === 'EXHAUSTED'
-                      ? 'bg-stone-500/20 text-stone-400 border-stone-500/40'
-                      : 'bg-rose-500/20 text-rose-300 border-rose-400/40'
+                        ? 'bg-stone-500/20 text-stone-400 border-stone-500/40'
+                        : 'bg-rose-500/20 text-rose-300 border-rose-400/40'
                   }`}
                 >
                   {card.status}
@@ -175,10 +171,52 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                 <div className="text-[11px] text-stone-400 flex items-center gap-1 font-mono">
                   <Calendar className="w-3 h-3 text-amber-400" />
                   <span>
-                    {lang === 'ko' ? '만료일(구매일+2년):' : 'Expires:'}{' '}
+                    {lang === 'ko' ? '만료일:' : 'Expires:'}{' '}
                     {new Date(card.expiresAt).toLocaleDateString()}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* 바코드 & QR & 액션 버튼 */}
+            <div className="p-4 rounded-2xl border border-stone-200 bg-[#FAF7F2] space-y-4">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-stone-200">
+                {card.barcodeDataUrl && (
+                  <div className="flex-1 flex justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={card.barcodeDataUrl}
+                      alt={`Barcode ${card.code}`}
+                      className="max-w-full h-auto"
+                    />
+                  </div>
+                )}
+                {card.qrCodeDataUrl && (
+                  <div className="shrink-0 p-1.5 border border-stone-200 rounded-xl bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={card.qrCodeDataUrl} alt="Gift card QR" className="w-20 h-20" />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => onOpenVoucher?.(card.code)}
+                  className="py-3 px-4 rounded-xl border border-stone-900 bg-white text-stone-900 text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-stone-50 transition cursor-pointer"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>{lang === 'ko' ? '전체 바코드 바우처 열기' : 'Open Full Voucher'}</span>
+                </button>
+                <a
+                  href={BOOKING_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-3 px-4 rounded-xl bg-stone-950 hover:bg-stone-800 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <span>Book a service</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
             </div>
 
@@ -189,7 +227,7 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                   <History className="w-3.5 h-3.5 text-stone-500" />
                   <span>{lang === 'ko' ? '카드 사용 및 충전 이력' : 'Transaction History'}</span>
                 </h4>
-                <span className="text-[11px] text-stone-500">총 {transactions.length}건</span>
+                <span className="text-[11px] text-stone-500">{transactions.length} records</span>
               </div>
 
               <div className="space-y-2">
@@ -221,7 +259,7 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                           <p className="font-semibold text-stone-900">{tx.summary}</p>
                           <p className="text-[10px] text-stone-500 mt-0.5">
                             {new Date(tx.createdAt).toLocaleString()}
-                            {tx.location && ` · ${tx.location} 지점`}
+                            {tx.location && ` · ${tx.location}`}
                           </p>
                         </div>
                       </div>
@@ -237,7 +275,7 @@ export default function BalanceTracker({ lang }: BalanceTrackerProps) {
                             : `+$${tx.amount.toFixed(2)}`}
                         </span>
                         <span className="block text-[10px] text-stone-400">
-                          잔액: ${tx.balanceAfter.toFixed(2)}
+                          Bal: ${tx.balanceAfter.toFixed(2)}
                         </span>
                       </div>
                     </div>

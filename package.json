@@ -6,13 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:firebase": "next build && node scripts/prepare-firebase-deploy.mjs",
+    "deploy:firebase": "pnpm build:firebase && npx firebase-tools deploy"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^7.1.0",
     "@stripe/stripe-js": "^10.3.0",
     "canvas-confetti": "^1.9.4",
     "firebase-admin": "^14.5.1",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.73.0",
     "next": "16.4.6",
     "qrcode": "^1.5.4",
@@ -27,6 +30,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",
@@ -38,7 +42,8 @@
       "@firebase/util",
       "protobufjs",
       "@next/swc-linux-x64-gnu",
-      "@img/sharp-libvips-linux-x64"
+      "@img/sharp-libvips-linux-x64",
+      "esbuild"
     ]
   }
 }

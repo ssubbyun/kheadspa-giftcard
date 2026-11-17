@@ -8,7 +8,13 @@ import {
   AlertTriangle,
   Loader2,
   KeyRound,
+  Camera,
+  Send,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+import BarcodeScannerModal from './BarcodeScannerModal';
+import { normalizeGiftCardCode } from '@/lib/barcode';
 
 interface StaffTerminalProps {
   lang: 'ko' | 'en';
@@ -21,43 +27,57 @@ interface SafeCardView {
   status: string;
   recipientMaskedName?: string;
   recipientName?: string;
+  deliveryStatus?: string;
   expiresAt: string;
 }
 
 export default function StaffTerminal({ lang }: StaffTerminalProps) {
   const [staffPin, setStaffPin] = useState('');
   const [location, setLocation] = useState<'Manhattan' | 'Norwood' | 'Fort Lee'>('Manhattan');
-  const [staffName, setStaffName] = useState('Sarah K.');
-  const [code, setCode] = useState('KSPA-HOLIDAY-2026');
+  const [staffName, setStaffName] = useState('');
+  const [code, setCode] = useState('');
   const [card, setCard] = useState<SafeCardView | null>(null);
-  const [redeemAmount, setRedeemAmount] = useState('50');
-  const [staffNote, setStaffNote] = useState('Signature Wet Head Spa 차감 결제');
+  const [redeemAmount, setRedeemAmount] = useState('');
+  const [staffNote, setStaffNote] = useState('');
+
+  // 스캐너 모달 & 재발송 패널 상태
+  const [showScanner, setShowScanner] = useState(false);
+  const [showResend, setShowResend] = useState(false);
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendPhone, setResendPhone] = useState('');
+  const [isResending, setIsResending] = useState(false);
 
   const [isSearching, setIsSearching] = useState(false);
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const handleLookup = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!code.trim()) return;
+  const lookupCode = async (rawCode: string) => {
+    const normalized = normalizeGiftCardCode(rawCode);
+    if (!normalized) return;
 
+    setCode(normalized);
     setIsSearching(true);
     setError(null);
     setSuccessMsg(null);
 
     try {
-      const res = await fetch(`/api/gift-cards/check?code=${encodeURIComponent(code.trim())}`);
+      const res = await fetch(`/api/gift-cards/check?code=${encodeURIComponent(normalized)}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '카드를 찾을 수 없습니다.');
+      if (!res.ok) throw new Error(data.error || 'Card not found.');
       setCard(data.card);
       setRedeemAmount(Math.min(data.card.currentBalance, 150).toString());
     } catch (err: any) {
-      setError(err.message || '카드 조회 실패');
+      setError(err.message || 'Card lookup failed');
       setCard(null);
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleLookup = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    await lookupCode(code);
   };
 
   const handleExecuteRedeem = async (e: React.FormEvent) => {
@@ -65,18 +85,22 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
     if (!card) return;
 
     if (!staffPin.trim()) {
-      setError('매장 관리자/직원 보안 PIN 번호를 입력해 주세요.');
+      setError(lang === 'ko' ? '매장 관리자/직원 보안 PIN 번호를 입력해 주세요.' : 'Please enter Staff PIN.');
       return;
     }
 
     const amt = Number(redeemAmount);
     if (!amt || amt <= 0) {
-      setError('올바른 차감 금액을 입력해 주세요.');
+      setError(lang === 'ko' ? '올바른 차감 금액을 입력해 주세요.' : 'Please enter a valid amount.');
       return;
     }
 
     if (amt > card.currentBalance) {
-      setError(`현재 카드 잔액($${card.currentBalance})보다 큰 금액은 차감할 수 없습니다.`);
+      setError(
+        lang === 'ko'
+          ? `현재 카드 잔액($${card.currentBalance})보다 큰 금액은 차감할 수 없습니다.`
+          : `Amount exceeds current balance ($${card.currentBalance.toFixed(2)}).`
+      );
       return;
     }
 
@@ -85,7 +109,6 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
     setSuccessMsg(null);
 
     try {
-      // 지적사항 #2 해결: 요청 헤더에 직원 인증 PIN(`x-staff-pin`) 전달
       const res = await fetch('/api/gift-cards/redeem', {
         method: 'POST',
         headers: {
@@ -96,22 +119,76 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           code: card.code,
           redeemAmount: amt,
           location,
-          staffName,
-          staffNote,
+          staffName: staffName.trim() || 'Authorized Staff',
+          staffNote: staffNote.trim() || 'Spa Service Redemption',
         }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '차감 처리에 실패했습니다.');
+      if (!res.ok) throw new Error(data.error || 'Redemption failed.');
 
       setSuccessMsg(
-        `성공적으로 $${amt.toFixed(2)} 차감 완료되었습니다! (남은 잔액: $${data.remainingBalance.toFixed(2)})`
+        lang === 'ko'
+          ? `성공적으로 $${amt.toFixed(2)} 차감 완료되었습니다! (남은 잔액: $${data.remainingBalance.toFixed(2)})`
+          : `Redeemed $${amt.toFixed(2)} successfully! (Remaining: $${data.remainingBalance.toFixed(2)})`
       );
       setCard(data.card);
     } catch (err: any) {
-      setError(err.message || '차감 처리 중 오류 발생');
+      setError(err.message || 'Redemption error');
     } finally {
       setIsRedeeming(false);
+    }
+  };
+
+  const handleResendVoucher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!card) return;
+
+    if (!staffPin.trim()) {
+      setError(lang === 'ko' ? '재발송하려면 직원 보안 PIN을 먼저 입력해 주세요.' : 'Please enter Staff PIN to resend.');
+      return;
+    }
+
+    setIsResending(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+      const res = await fetch('/api/gift-cards/resend', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-staff-pin': staffPin.trim(),
+        },
+        body: JSON.stringify({
+          code: card.code,
+          recipientEmail: resendEmail.trim() || undefined,
+          recipientPhone: resendPhone.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Resend failed.');
+
+      const status = data.delivery?.deliveryStatus;
+      if (status === 'SENT') {
+        setSuccessMsg(lang === 'ko' ? '이메일 및 SMS 재발송이 완료되었습니다.' : 'Voucher resent via Email & SMS.');
+      } else if (status === 'PARTIAL') {
+        setSuccessMsg(lang === 'ko' ? '일부 채널(이메일 또는 SMS)로 재발송되었습니다.' : 'Voucher resent to available channel.');
+      } else if (status === 'SKIPPED_NO_CREDENTIALS') {
+        setSuccessMsg(
+          lang === 'ko'
+            ? '연락처는 저장되었으나 Resend/Twilio API 키가 아직 비어 있어 발송이 스킵되었습니다.'
+            : 'Contact updated, but Email/SMS API keys are not configured yet.'
+        );
+      } else {
+        setError(lang === 'ko' ? '발송 API 호출에 실패했습니다. 키와 주소를 확인해 주세요.' : 'Delivery API returned an error.');
+      }
+      setShowResend(false);
+    } catch (err: any) {
+      setError(err.message || 'Resend error');
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -129,7 +206,7 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           <p className="text-xs text-stone-400 mt-0.5 flex items-center gap-1.5">
             <MapPin className="w-3 h-3 text-amber-400" />
             <span>
-              현재 지점: <strong>{location}</strong> (담당: {staffName})
+              {location} · {staffName.trim() || (lang === 'ko' ? '담당자 미입력' : 'Staff')}
             </span>
           </p>
         </div>
@@ -145,11 +222,11 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           <div>
             <label className="block text-stone-800 font-bold mb-1 flex items-center gap-1.5">
               <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-              <span>매장 직원 보안 PIN (필수 인증)</span>
+              <span>{lang === 'ko' ? '매장 직원 보안 PIN (필수 인증)' : 'Staff Security PIN (Required)'}</span>
             </label>
             <input
               type="password"
-              placeholder="직원 전용 보안 PIN 입력 (예: 1234)"
+              placeholder={lang === 'ko' ? '직원 전용 보안 PIN 입력' : 'Enter Staff PIN'}
               value={staffPin}
               onChange={(e) => setStaffPin(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-[#FAF7F2] font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900"
@@ -158,7 +235,9 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-stone-600 font-medium mb-1">근무 지점</label>
+              <label className="block text-stone-600 font-medium mb-1">
+                {lang === 'ko' ? '근무 지점' : 'Location'}
+              </label>
               <select
                 value={location}
                 onChange={(e) => setLocation(e.target.value as any)}
@@ -170,9 +249,12 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
               </select>
             </div>
             <div>
-              <label className="block text-stone-600 font-medium mb-1">담당 테라피스트 / 직원</label>
+              <label className="block text-stone-600 font-medium mb-1">
+                {lang === 'ko' ? '담당 직원 성함' : 'Staff Name'}
+              </label>
               <input
                 type="text"
+                placeholder={lang === 'ko' ? '담당자 이름' : 'e.g. Sarah K.'}
                 value={staffName}
                 onChange={(e) => setStaffName(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-[#FAF7F2] text-stone-800 focus:outline-none"
@@ -181,25 +263,35 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           </div>
         </div>
 
-        {/* 1. 코드 조회 */}
+        {/* 1. 코드 조회 & 바코드/QR 스캔 */}
         <form onSubmit={handleLookup} className="space-y-2">
-          <label className="block font-bold text-stone-900 uppercase tracking-wider">
-            1. 고객 기프트 카드 코드 조회
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="block font-bold text-stone-900 uppercase tracking-wider">
+              1. {lang === 'ko' ? '고객 기프트 카드 코드 조회' : 'Lookup Customer Gift Card'}
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowScanner(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 font-bold text-[11px] hover:bg-amber-100 transition cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>{lang === 'ko' ? '바코드 / QR 스캔' : 'Scan Barcode / QR'}</span>
+            </button>
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="KSPA-XXXX-XXXX-XXXX"
+              placeholder="KSPA-XXXX-XXXX-XXXX (or scan with barcode reader)"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               className="flex-1 font-mono uppercase px-3.5 py-2.5 rounded-xl border border-stone-300 bg-[#FAF7F2] focus:outline-none focus:ring-1 focus:ring-stone-900"
             />
             <button
               type="submit"
-              disabled={isSearching}
-              className="px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl transition cursor-pointer"
+              disabled={isSearching || !code.trim()}
+              className="px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-xl transition cursor-pointer disabled:opacity-50"
             >
-              {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '조회'}
+              {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (lang === 'ko' ? '조회' : 'Lookup')}
             </button>
           </div>
         </form>
@@ -220,18 +312,22 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           </div>
         )}
 
-        {/* 조회된 카드 정보 */}
+        {/* 조회된 카드 정보 & 재발송 패널 */}
         {card && (
           <div className="p-4 rounded-xl bg-[#FAF7F2] border border-stone-200 space-y-3">
             <div className="flex justify-between items-center">
               <div>
-                <span className="text-[10px] text-stone-500 uppercase font-semibold">소지자 / 상태</span>
+                <span className="text-[10px] text-stone-500 uppercase font-semibold">
+                  {lang === 'ko' ? '소지자 / 상태' : 'Holder / Status'}
+                </span>
                 <p className="font-bold text-sm text-stone-900">
-                  {card.recipientName || card.recipientMaskedName || '고객'} 님 ({card.status})
+                  {card.recipientName || card.recipientMaskedName || 'Guest'} ({card.status})
                 </p>
               </div>
               <div className="text-right">
-                <span className="text-[10px] text-stone-500 uppercase font-semibold">사용 가능 잔여 잔액</span>
+                <span className="text-[10px] text-stone-500 uppercase font-semibold">
+                  {lang === 'ko' ? '사용 가능 잔여 잔액' : 'Available Balance'}
+                </span>
                 <p className="font-serif-luxury text-2xl font-bold text-emerald-700">
                   ${card.currentBalance.toFixed(2)}
                 </p>
@@ -239,8 +335,57 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
             </div>
 
             <div className="flex justify-between text-[11px] text-stone-500 border-t border-stone-200 pt-2">
-              <span>최초 충전액: ${card.initialBalance.toFixed(2)}</span>
-              <span>유효기간: {new Date(card.expiresAt).toLocaleDateString()} (2년)</span>
+              <span>{lang === 'ko' ? '최초 충전액:' : 'Initial:'} ${card.initialBalance.toFixed(2)}</span>
+              <span>
+                {lang === 'ko' ? '만료일:' : 'Expires:'} {new Date(card.expiresAt).toLocaleDateString()}
+              </span>
+            </div>
+
+            {/* 이메일 / SMS 재발송 접이식 패널 */}
+            <div className="border-t border-stone-200 pt-2.5">
+              <button
+                type="button"
+                onClick={() => setShowResend((prev) => !prev)}
+                className="w-full flex items-center justify-between text-[11px] font-bold text-stone-700 hover:text-stone-950 cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Send className="w-3.5 h-3.5 text-amber-700" />
+                  <span>{lang === 'ko' ? '이메일 / SMS 바우처 재발송' : 'Resend Email / SMS Voucher'}</span>
+                </span>
+                {showResend ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {showResend && (
+                <form onSubmit={handleResendVoucher} className="mt-3 space-y-2.5 bg-white p-3 rounded-lg border border-stone-200">
+                  <p className="text-[11px] text-stone-500">
+                    {lang === 'ko'
+                      ? '연락처를 변경해 재발송할 경우에만 입력하고, 기존 연락처로 재발송하려면 비워두고 전송하세요.'
+                      : 'Leave blank to resend to the existing contact, or enter an updated email/phone.'}
+                  </p>
+                  <input
+                    type="email"
+                    placeholder={lang === 'ko' ? '수정할 수신 이메일 (선택)' : 'Updated recipient email (optional)'}
+                    value={resendEmail}
+                    onChange={(e) => setResendEmail(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300 text-xs focus:outline-none"
+                  />
+                  <input
+                    type="tel"
+                    placeholder={lang === 'ko' ? '수정할 수신 휴대폰 (+1... 선택)' : 'Updated recipient phone (+1..., optional)'}
+                    value={resendPhone}
+                    onChange={(e) => setResendPhone(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300 text-xs focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isResending}
+                    className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isResending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    <span>{lang === 'ko' ? '바우처 즉시 재발송' : 'Send Voucher Now'}</span>
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         )}
@@ -250,7 +395,7 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           <form onSubmit={handleExecuteRedeem} className="space-y-4 border-t border-stone-200 pt-4">
             <div>
               <label className="block font-bold text-stone-900 mb-1.5 uppercase tracking-wider">
-                2. 현장 시술 차감 금액 입력 (USD)
+                2. {lang === 'ko' ? '현장 시술 차감 금액 입력 (USD)' : 'Redeem Amount (USD)'}
               </label>
               <div className="relative">
                 <span className="absolute left-3.5 top-2.5 text-base font-bold text-stone-400">$</span>
@@ -265,16 +410,19 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
                 />
               </div>
               <p className="text-[11px] text-stone-500 mt-1">
-                * 전액 차감 시 남은 시술 차액은 카운터 신용카드 또는 현금으로 복합 결제 가능합니다.
+                {lang === 'ko'
+                  ? '* 전액 차감 시 남은 시술 차액은 카운터 신용카드 또는 현금으로 복합 결제 가능합니다.'
+                  : '* Remaining treatment balance can be settled via card or cash at checkout.'}
               </p>
             </div>
 
             <div>
               <label className="block font-medium text-stone-700 mb-1">
-                시술 명칭 및 메모 (영수증에 기록됨)
+                {lang === 'ko' ? '시술 명칭 및 메모' : 'Service / Staff Note'}
               </label>
               <input
                 type="text"
+                placeholder={lang === 'ko' ? '예: Signature Wet Head Spa 차감' : 'e.g. Signature Wet Head Spa'}
                 value={staffNote}
                 onChange={(e) => setStaffNote(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-stone-300 focus:outline-none"
@@ -291,13 +439,28 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4" />
-                  <span>기프트 카드 차감 승인 (Redeem ${redeemAmount})</span>
+                  <span>
+                    {lang === 'ko'
+                      ? `기프트 카드 차감 승인 (Redeem $${redeemAmount || '0'})`
+                      : `Confirm Redemption ($${redeemAmount || '0'})`}
+                  </span>
                 </>
               )}
             </button>
           </form>
         )}
       </div>
+
+      {showScanner && (
+        <BarcodeScannerModal
+          lang={lang}
+          onDetected={(detectedCode) => {
+            setShowScanner(false);
+            lookupCode(detectedCode);
+          }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { GiftCard, GiftCardTransaction, Promotion } from '@/types/gift-card';
+import { GiftCard, GiftCardDesignId, GiftCardTransaction, Promotion } from '@/types/gift-card';
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
@@ -8,7 +8,14 @@ import {
   getGiftCardFromFirebase,
   getTransactionsFromFirebase,
   redeemInFirebase,
+  updateGiftCardMetadataInFirebase,
+  getPendingScheduledCardsFromFirebase,
 } from './firebase';
+import {
+  generateCode128DataUrl,
+  normalizeGiftCardCode,
+  normalizeUsPhone,
+} from './barcode';
 
 // 1. 활성 프로모션: 11월 30일까지 20% 특별 할인
 export const ACTIVE_PROMOTION: Promotion = {
@@ -115,6 +122,24 @@ export function generateGiftCardCode(): string {
   return `KSPA-${segment()}-${segment()}-${segment()}`;
 }
 
+// EST 기준 오늘 날짜 (YYYY-MM-DD)
+export function getTodayEstDateString(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+}
+
+export function isFutureScheduledDate(dateStr?: string): boolean {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  return dateStr > getTodayEstDateString();
+}
+
+export function getAppBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || 'https://gift.kheadspawellness.com').replace(/\/+$/, '');
+}
+
+export function getVoucherUrl(code: string): string {
+  return `${getAppBaseUrl()}/?card=${encodeURIComponent(code)}`;
+}
+
 // 초기 샘플 카드 시딩 (로컬 모드용)
 async function seedInitialCard() {
   if (isFirebaseConfigured()) return;
@@ -122,7 +147,8 @@ async function seedInitialCard() {
   if (!localStore.cards[demoCode]) {
     const createdAt = '2026-11-10T10:00:00Z';
     const expiresAt = calculateTwoYearExpiry(new Date(createdAt));
-    const qrDataUrl = await QRCode.toDataURL(demoCode, { margin: 1, width: 220 });
+    const qrDataUrl = await QRCode.toDataURL(getVoucherUrl(demoCode), { margin: 1, width: 240 });
+    const barcodeDataUrl = generateCode128DataUrl(demoCode);
 
     const demoCard: GiftCard = {
       id: 'card-demo-001',
@@ -132,13 +158,16 @@ async function seedInitialCard() {
       paidAmount: 160,
       currency: 'USD',
       status: 'ACTIVE',
+      designId: 'holiday-emerald',
       buyerName: '김민서',
       buyerEmail: 'minseo.kim@example.com',
       recipientType: 'gift',
       recipientName: '이지은',
       recipientEmail: 'jieun.lee@example.com',
       message: '생일 축하해요! 맨해튼 K-headspa에서 힐링하고 오세요 :)',
+      deliveryStatus: 'SKIPPED_NO_CREDENTIALS',
       qrCodeDataUrl: qrDataUrl,
+      barcodeDataUrl,
       stripePaymentIntentId: 'pi_test_demo_holiday_200',
       promotionId: ACTIVE_PROMOTION.id,
       createdAt,
@@ -185,7 +214,8 @@ seedInitialCard().catch(console.error);
 
 // 1. 카드 조회 (지적사항 #3 해결: Firebase가 설정되어 있으면 오직 Firebase만 사용, 실패 시 로컬로 넘어가지 않고 에러 반환)
 export async function getGiftCardByCodeAsync(code: string): Promise<{ card?: GiftCard; transactions: GiftCardTransaction[] }> {
-  const normalized = code.trim().toUpperCase();
+  const normalized = normalizeGiftCardCode(code);
+  if (!normalized) return { transactions: [] };
 
   if (isFirebaseConfigured()) {
     const card = await getGiftCardFromFirebase(normalized);
@@ -213,12 +243,16 @@ export async function getGiftCardByCodeAsync(code: string): Promise<{ card?: Gif
 export async function issueGiftCard(params: {
   faceValue: number;
   paidAmount: number;
+  designId?: GiftCardDesignId;
   buyerName: string;
   buyerEmail: string;
+  buyerPhone?: string;
   recipientType: 'self' | 'gift';
   recipientName?: string;
   recipientEmail?: string;
+  recipientPhone?: string;
   message?: string;
+  scheduledDeliveryDate?: string;
   stripePaymentIntentId: string;
 }): Promise<GiftCard> {
   if (!params.stripePaymentIntentId) {
@@ -229,7 +263,21 @@ export async function issueGiftCard(params: {
   const code = generateGiftCardCode();
   const now = new Date();
   const expiresAt = calculateTwoYearExpiry(now); // 정확히 2년 뒤 만료
-  const qrCodeDataUrl = await QRCode.toDataURL(code, { margin: 1, width: 240 });
+  const voucherUrl = getVoucherUrl(code);
+  const qrCodeDataUrl = await QRCode.toDataURL(voucherUrl, { margin: 1, width: 240 });
+  const barcodeDataUrl = generateCode128DataUrl(code);
+
+  const normalizedBuyerPhone = normalizeUsPhone(params.buyerPhone);
+  const normalizedRecipientPhone =
+    params.recipientType === 'gift'
+      ? normalizeUsPhone(params.recipientPhone)
+      : normalizedBuyerPhone;
+
+  const cleanSchedule =
+    params.scheduledDeliveryDate && /^\d{4}-\d{2}-\d{2}$/.test(params.scheduledDeliveryDate.trim())
+      ? params.scheduledDeliveryDate.trim()
+      : undefined;
+  const isScheduledForFuture = isFutureScheduledDate(cleanSchedule);
 
   const newCard: GiftCard = {
     id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -239,13 +287,19 @@ export async function issueGiftCard(params: {
     paidAmount: params.paidAmount,
     currency: 'USD',
     status: 'ACTIVE',
+    designId: params.designId || 'signature-gold',
     buyerName: params.buyerName,
     buyerEmail: params.buyerEmail,
+    buyerPhone: normalizedBuyerPhone,
     recipientType: params.recipientType,
     recipientName: params.recipientType === 'gift' ? params.recipientName : params.buyerName,
     recipientEmail: params.recipientType === 'gift' ? params.recipientEmail : params.buyerEmail,
+    recipientPhone: normalizedRecipientPhone,
     message: params.message,
+    scheduledDeliveryDate: cleanSchedule,
+    deliveryStatus: isScheduledForFuture ? 'PENDING_SCHEDULED' : undefined,
     qrCodeDataUrl,
+    barcodeDataUrl,
     stripePaymentIntentId: params.stripePaymentIntentId,
     promotionId: calc.isPromoActive ? ACTIVE_PROMOTION.id : undefined,
     createdAt: now.toISOString(),
@@ -293,12 +347,17 @@ export async function redeemGiftCardAsync(params: {
   staffName: string;
   staffNote?: string;
 }): Promise<{ success: boolean; message: string; card?: GiftCard; remainingBalance?: number }> {
+  const normalizedCode = normalizeGiftCardCode(params.code);
+
   // Firebase 연동 시 오직 Firebase에서만 처리하고 그 결과를 그대로 반환 (절대 로컬 Fallback 하지 않음!)
   if (isFirebaseConfigured()) {
-    return await redeemInFirebase(params);
+    return await redeemInFirebase({
+      ...params,
+      code: normalizedCode,
+    });
   }
 
-  const { card } = await getGiftCardByCodeAsync(params.code);
+  const { card } = await getGiftCardByCodeAsync(normalizedCode);
   if (!card) {
     return { success: false, message: '기프트 카드를 찾을 수 없습니다. 번호를 다시 확인해 주세요.' };
   }
@@ -357,3 +416,39 @@ export async function redeemGiftCardAsync(params: {
     remainingBalance: balanceAfter,
   };
 }
+
+// 4. 발송 상태 및 연락처 업데이트
+export async function updateGiftCardDeliveryAsync(
+  code: string,
+  updates: Partial<GiftCard>
+): Promise<GiftCard | null> {
+  const normalized = normalizeGiftCardCode(code);
+  if (!normalized) return null;
+
+  if (isFirebaseConfigured()) {
+    return await updateGiftCardMetadataInFirebase(normalized, updates);
+  }
+
+  const card = localStore.cards[normalized];
+  if (!card) return null;
+
+  Object.assign(card, updates);
+  saveStoreStrict(localStore);
+  return card;
+}
+
+// 5. 당일(또는 과거 미발송) 예약 발송 카드 조회
+export async function getDueScheduledGiftCardsAsync(maxDateEst: string): Promise<GiftCard[]> {
+  if (isFirebaseConfigured()) {
+    return await getPendingScheduledCardsFromFirebase(maxDateEst);
+  }
+
+  return Object.values(localStore.cards).filter(
+    (card) =>
+      card.status === 'ACTIVE' &&
+      card.deliveryStatus === 'PENDING_SCHEDULED' &&
+      Boolean(card.scheduledDeliveryDate) &&
+      (card.scheduledDeliveryDate as string) <= maxDateEst
+  );
+}
+
