@@ -13,6 +13,7 @@ import {
 } from '../../src/lib/storage';
 import {
   createStripePaymentIntent,
+  isDemoCheckoutAllowed,
   verifySucceededPaymentIntent,
 } from '../../src/lib/stripe';
 import {
@@ -43,6 +44,7 @@ interface ApiBody {
   message?: string;
   scheduledDeliveryDate?: string;
   stripePaymentIntentId?: string;
+  demoMode?: boolean;
   code?: string;
   redeemAmount?: unknown;
   location?: string;
@@ -126,6 +128,7 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       promotion: ACTIVE_PROMOTION,
       serverTime: new Date().toISOString(),
       isPromoActive: calc200.isPromoActive,
+      demoCheckoutAvailable: isDemoCheckoutAllowed(),
       sampleCalculation: {
         faceValue: 200,
         chargeAmount: calc200.chargeAmount,
@@ -147,6 +150,7 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
         recipientType,
         recipientName,
         recipientEmail,
+        demoMode,
       } = body;
 
       const amount = Number(faceValue);
@@ -169,10 +173,12 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       }
 
       const calculation = calculatePromotionDiscount(amount);
+      const requestedDemoMode = Boolean(demoMode);
       const paymentIntent = await createStripePaymentIntent({
         amountInDollars: calculation.chargeAmount,
         faceValue: calculation.faceValue,
         buyerEmail: String(buyerEmail).trim(),
+        demoMode: requestedDemoMode,
         metadata: {
           buyerName: String(buyerName).trim(),
           recipientType: recipientType || 'self',
@@ -185,6 +191,7 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       res.status(200).json({
         clientSecret: paymentIntent.clientSecret,
         paymentIntentId: paymentIntent.paymentIntentId,
+        demoMode: Boolean(paymentIntent.demoMode),
         faceValue: calculation.faceValue,
         chargeAmount: calculation.chargeAmount,
         discountAmount: calculation.discountAmount,

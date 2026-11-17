@@ -360,6 +360,72 @@ async function runTests() {
     assert.strictEqual(ok.recipientPhone, '+12015550144');
   });
 
+  await test('QA-26', 'Demo checkout HMAC verification, tamper rejection, and auto-disable when real Stripe key is set', async () => {
+    const prevAllow = process.env.ALLOW_DEMO_CHECKOUT;
+    const prevSecret = process.env.STRIPE_SECRET_KEY;
+
+    try {
+      process.env.ALLOW_DEMO_CHECKOUT = 'true';
+      process.env.STRIPE_SECRET_KEY = 'sk_test_sample';
+      assert.strictEqual(mod.isDemoCheckoutAllowed(), true);
+
+      const demoIntent = await mod.createStripePaymentIntent({
+        amountInDollars: 160,
+        faceValue: 200,
+        buyerEmail: 'demo-qa@example.com',
+        demoMode: true,
+      });
+      assert.strictEqual(demoIntent.demoMode, true);
+      assert(demoIntent.paymentIntentId.startsWith('pi_demo_'));
+
+      const verified = await mod.verifySucceededPaymentIntent({
+        paymentIntentId: demoIntent.paymentIntentId,
+        expectedChargeDollars: 160,
+        expectedFaceValue: 200,
+      });
+      assert.strictEqual(verified.status, 'succeeded');
+      assert.strictEqual(verified.amount, 16000);
+
+      await assert.rejects(
+        () =>
+          mod.verifySucceededPaymentIntent({
+            paymentIntentId: demoIntent.paymentIntentId,
+            expectedChargeDollars: 160,
+            expectedFaceValue: 500,
+          }),
+        /액면가/
+      );
+
+      await assert.rejects(
+        () =>
+          mod.verifySucceededPaymentIntent({
+            paymentIntentId: demoIntent.paymentIntentId.slice(0, -4) + 'ffff',
+            expectedChargeDollars: 160,
+            expectedFaceValue: 200,
+          }),
+        /서명/
+      );
+
+      process.env.STRIPE_SECRET_KEY = ['sk', 'live', 'qa_mock_123456789'].join('_');
+      assert.strictEqual(mod.isDemoCheckoutAllowed(), false);
+
+      await assert.rejects(
+        () =>
+          mod.verifySucceededPaymentIntent({
+            paymentIntentId: demoIntent.paymentIntentId,
+            expectedChargeDollars: 160,
+            expectedFaceValue: 200,
+          }),
+        /비활성화/
+      );
+    } finally {
+      if (prevAllow === undefined) delete process.env.ALLOW_DEMO_CHECKOUT;
+      else process.env.ALLOW_DEMO_CHECKOUT = prevAllow;
+      if (prevSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = prevSecret;
+    }
+  });
+
   process.stdout.write(JSON.stringify(results));
 }
 
@@ -570,6 +636,7 @@ async function main() {
       `export * from ${JSON.stringify(path.join(ROOT_DIR, 'src/lib/storage.ts').replace(/\\/g, '/'))};`,
       `export * from ${JSON.stringify(path.join(ROOT_DIR, 'src/lib/notifications.ts').replace(/\\/g, '/'))};`,
       `export * from ${JSON.stringify(path.join(ROOT_DIR, 'src/lib/auth.ts').replace(/\\/g, '/'))};`,
+      `export * from ${JSON.stringify(path.join(ROOT_DIR, 'src/lib/stripe.ts').replace(/\\/g, '/'))};`,
     ].join('\n');
 
     fs.writeFileSync(entryTs, entryContent, 'utf-8');

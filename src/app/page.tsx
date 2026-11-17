@@ -89,6 +89,9 @@ export default function Home() {
   const [lang, setLang] = useState<'ko' | 'en'>('en');
   const [discountRate, setDiscountRate] = useState<number>(20);
   const [isPromoActive, setIsPromoActive] = useState<boolean>(true);
+  const [demoCheckoutAvailable, setDemoCheckoutAvailable] = useState<boolean>(
+    process.env.NEXT_PUBLIC_DEMO_CHECKOUT === 'true'
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +103,9 @@ export default function Home() {
         const rate = Number(data.sampleCalculation?.discountRate ?? 0);
         setIsPromoActive(active);
         setDiscountRate(active && rate > 0 ? rate : 0);
+        if (typeof data.demoCheckoutAvailable === 'boolean') {
+          setDemoCheckoutAvailable(data.demoCheckoutAvailable);
+        }
       })
       .catch(() => {
         // Keep initial promo state on transient network error
@@ -278,6 +284,7 @@ export default function Home() {
                         designId={designId}
                         setDesignId={setDesignId}
                         lang={lang}
+                        demoCheckoutAvailable={demoCheckoutAvailable}
                         onOpenVoucher={openVoucher}
                       />
                     </div>

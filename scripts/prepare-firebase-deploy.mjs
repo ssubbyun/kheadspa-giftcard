@@ -129,6 +129,8 @@ async function main() {
 
   const syncedEnv = {
     STRIPE_SECRET_KEY: pickSecret('STRIPE_SECRET_KEY', 'sk_test_sample'),
+    ALLOW_DEMO_CHECKOUT:
+      localEnv.ALLOW_DEMO_CHECKOUT || existingFuncEnv.ALLOW_DEMO_CHECKOUT || 'true',
     STAFF_PORTAL_PIN: localEnv.STAFF_PORTAL_PIN || existingFuncEnv.STAFF_PORTAL_PIN || '1234',
     NEXT_PUBLIC_APP_URL: pickAppUrl(),
     NEXT_PUBLIC_BOOKING_URL:

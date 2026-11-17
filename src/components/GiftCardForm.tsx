@@ -17,6 +17,7 @@ import {
   Palette,
   Receipt,
   CheckCircle2,
+  FlaskConical,
 } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import {
@@ -79,6 +80,7 @@ interface GiftCardFormProps {
   designId: GiftCardDesignId;
   setDesignId: (id: GiftCardDesignId) => void;
   lang: 'ko' | 'en';
+  demoCheckoutAvailable?: boolean;
   onOpenVoucher?: (code: string) => void;
 }
 
@@ -88,6 +90,56 @@ function getTomorrowEstDate(): string {
   const [y, m, d] = estNowStr.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + 1));
   return dt.toISOString().slice(0, 10);
+}
+
+interface CheckoutStepProps {
+  paymentIntentId: string;
+  finalChargeAmount: number;
+  currentFaceValue: number;
+  designId: GiftCardDesignId;
+  buyerName: string;
+  buyerEmail: string;
+  buyerPhone: string;
+  recipientType: 'self' | 'gift';
+  recipientName: string;
+  recipientEmail: string;
+  recipientPhone: string;
+  message: string;
+  scheduledDeliveryDate: string;
+  lang: 'ko' | 'en';
+  onSuccess: (card: GiftCard) => void;
+  onCancel: () => void;
+}
+
+async function issueGiftCardFromCheckout(
+  props: Omit<CheckoutStepProps, 'finalChargeAmount' | 'lang' | 'onSuccess' | 'onCancel'>,
+  resolvedPaymentIntentId: string
+): Promise<GiftCard> {
+  const issueRes = await fetch('/api/gift-cards/issue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      faceValue: props.currentFaceValue,
+      designId: props.designId,
+      buyerName: props.buyerName,
+      buyerEmail: props.buyerEmail,
+      buyerPhone: props.buyerPhone,
+      recipientType: props.recipientType,
+      recipientName: props.recipientType === 'gift' ? props.recipientName : props.buyerName,
+      recipientEmail: props.recipientType === 'gift' ? props.recipientEmail : props.buyerEmail,
+      recipientPhone: props.recipientType === 'gift' ? props.recipientPhone : props.buyerPhone,
+      message: props.message,
+      scheduledDeliveryDate: props.scheduledDeliveryDate || undefined,
+      stripePaymentIntentId: resolvedPaymentIntentId,
+    }),
+  });
+
+  const issueData = await issueRes.json();
+  if (!issueRes.ok) {
+    throw new Error(issueData.error || 'Gift card issuance verification failed.');
+  }
+
+  return issueData.giftCard as GiftCard;
 }
 
 // Stripe Elements 내부 결제 승인 및 발급 서브 컴포넌트
@@ -108,24 +160,7 @@ function StripeCheckoutStep({
   lang,
   onSuccess,
   onCancel,
-}: {
-  paymentIntentId: string;
-  finalChargeAmount: number;
-  currentFaceValue: number;
-  designId: GiftCardDesignId;
-  buyerName: string;
-  buyerEmail: string;
-  buyerPhone: string;
-  recipientType: 'self' | 'gift';
-  recipientName: string;
-  recipientEmail: string;
-  recipientPhone: string;
-  message: string;
-  scheduledDeliveryDate: string;
-  lang: 'ko' | 'en';
-  onSuccess: (card: GiftCard) => void;
-  onCancel: () => void;
-}) {
+}: CheckoutStepProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [isConfirming, setIsConfirming] = useState(false);
@@ -156,31 +191,25 @@ function StripeCheckoutStep({
         );
       }
 
-      const issueRes = await fetch('/api/gift-cards/issue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          faceValue: currentFaceValue,
+      const issued = await issueGiftCardFromCheckout(
+        {
+          paymentIntentId,
+          currentFaceValue,
           designId,
           buyerName,
           buyerEmail,
           buyerPhone,
           recipientType,
-          recipientName: recipientType === 'gift' ? recipientName : buyerName,
-          recipientEmail: recipientType === 'gift' ? recipientEmail : buyerEmail,
-          recipientPhone: recipientType === 'gift' ? recipientPhone : buyerPhone,
+          recipientName,
+          recipientEmail,
+          recipientPhone,
           message,
-          scheduledDeliveryDate: scheduledDeliveryDate || undefined,
-          stripePaymentIntentId: paymentIntent.id || paymentIntentId,
-        }),
-      });
+          scheduledDeliveryDate,
+        },
+        paymentIntent.id || paymentIntentId
+      );
 
-      const issueData = await issueRes.json();
-      if (!issueRes.ok) {
-        throw new Error(issueData.error || 'Gift card issuance verification failed.');
-      }
-
-      onSuccess(issueData.giftCard);
+      onSuccess(issued);
     } catch (err: unknown) {
       setErrorMsg(
         getErrorMessage(
@@ -241,6 +270,171 @@ function StripeCheckoutStep({
   );
 }
 
+// 데모 시뮬레이션 체크아웃 단계 컴포넌트 (Stripe 키 연결 전 E2E 체험용)
+function DemoCheckoutStep({
+  paymentIntentId,
+  finalChargeAmount,
+  currentFaceValue,
+  designId,
+  buyerName,
+  buyerEmail,
+  buyerPhone,
+  recipientType,
+  recipientName,
+  recipientEmail,
+  recipientPhone,
+  message,
+  scheduledDeliveryDate,
+  lang,
+  onSuccess,
+  onCancel,
+}: CheckoutStepProps) {
+  const [simOutcome, setSimOutcome] = useState<'approve' | 'decline'>('approve');
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleConfirmDemo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsConfirming(true);
+    setErrorMsg(null);
+
+    try {
+      await new Promise((r) => setTimeout(r, 450));
+
+      if (simOutcome === 'decline') {
+        throw new Error(
+          lang === 'ko'
+            ? '[데모 시뮬레이션] 테스트 카드 승인이 거절되었습니다 (Simulated Card Declined).'
+            : '[Demo Simulation] Your simulated test card was declined.'
+        );
+      }
+
+      const issued = await issueGiftCardFromCheckout(
+        {
+          paymentIntentId,
+          currentFaceValue,
+          designId,
+          buyerName,
+          buyerEmail,
+          buyerPhone,
+          recipientType,
+          recipientName,
+          recipientEmail,
+          recipientPhone,
+          message,
+          scheduledDeliveryDate,
+        },
+        paymentIntentId
+      );
+
+      onSuccess(issued);
+    } catch (err: unknown) {
+      setErrorMsg(
+        getErrorMessage(
+          err,
+          lang === 'ko' ? '데모 결제 처리 중 오류가 발생했습니다.' : 'Error during demo checkout.'
+        )
+      );
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleConfirmDemo} className="space-y-4 pt-4 border-t border-[#ece0d8]">
+      <div className="p-4 rounded-2xl border border-[#c5a059]/60 bg-[#fff8f5] space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#ffdea5] text-[#261900] text-[10px] font-bold uppercase tracking-wider">
+            <FlaskConical className="w-3 h-3 text-[#775a19]" />
+            {lang === 'ko' ? '데모 시뮬레이션 · 실제 청구 $0.00' : 'SANDBOX SIMULATION · $0.00 REAL CHARGE'}
+          </span>
+          <span className="font-mono text-[11px] text-[#737874]">
+            Test Visa •••• 4242 · 12/28
+          </span>
+        </div>
+
+        <p className="text-[11px] text-[#424844] leading-relaxed">
+          {lang === 'ko'
+            ? '실제 Stripe 키 없이 결제 승인 → HMAC 서버 검증 → 실물 바코드/QR 발급 및 잔액 등록 과정을 테스트합니다.'
+            : 'Simulates Stripe approval, triggers server HMAC verification, and issues a live scannable barcode & QR gift card.'}
+        </p>
+
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <button
+            type="button"
+            disabled={isConfirming}
+            onClick={() => {
+              setSimOutcome('approve');
+              setErrorMsg(null);
+            }}
+            className={`py-2.5 px-3 rounded-xl font-semibold transition cursor-pointer ${
+              simOutcome === 'approve'
+                ? 'bg-[#1b2e24] text-white shadow-sm'
+                : 'bg-[#fef1e9] text-[#424844] border border-[#ece0d8]'
+            }`}
+          >
+            {lang === 'ko' ? '결제 승인 시뮬레이션' : 'Approve Payment'}
+          </button>
+          <button
+            type="button"
+            disabled={isConfirming}
+            onClick={() => {
+              setSimOutcome('decline');
+              setErrorMsg(null);
+            }}
+            className={`py-2.5 px-3 rounded-xl font-semibold transition cursor-pointer ${
+              simOutcome === 'decline'
+                ? 'bg-rose-700 text-white shadow-sm'
+                : 'bg-[#fef1e9] text-[#424844] border border-[#ece0d8]'
+            }`}
+          >
+            {lang === 'ko' ? '카드 거절 시뮬레이션' : 'Simulate Card Decline'}
+          </button>
+        </div>
+      </div>
+
+      {errorMsg && (
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isConfirming}
+          className="px-4 py-3.5 rounded-xl border border-[#c2c8c2] text-[#424844] text-xs font-semibold hover:bg-[#fef1e9] transition cursor-pointer"
+        >
+          {lang === 'ko' ? '이전 단계' : 'Back'}
+        </button>
+
+        <button
+          type="submit"
+          disabled={isConfirming}
+          className="flex-1 py-3.5 rounded-xl bg-[#775a19] hover:bg-[#5d4201] text-white font-semibold text-sm tracking-wide transition shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+        >
+          {isConfirming ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{lang === 'ko' ? '데모 결제 확인 및 발급 중...' : 'Simulating & Issuing Card...'}</span>
+            </>
+          ) : (
+            <>
+              <FlaskConical className="w-4 h-4 text-[#ffdea5]" />
+              <span>
+                ${finalChargeAmount.toFixed(2)}{' '}
+                {lang === 'ko' ? '데모 결제 승인 및 카드 발급' : 'Confirm Demo Payment & Issue'}
+              </span>
+            </>
+          )}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function GiftCardForm({
   amount,
   setAmount,
@@ -250,6 +444,7 @@ export default function GiftCardForm({
   designId,
   setDesignId,
   lang,
+  demoCheckoutAvailable = false,
   onOpenVoucher,
 }: GiftCardFormProps) {
   const [recipientType, setRecipientType] = useState<'self' | 'gift'>('gift');
@@ -266,6 +461,11 @@ export default function GiftCardForm({
   const [deliveryMode, setDeliveryMode] = useState<'immediate' | 'scheduled'>('immediate');
   const [scheduledDate, setScheduledDate] = useState('');
   const tomorrowEst = useSyncExternalStore(emptySubscribe, getTomorrowEstDate, () => '');
+
+  // 데모 결제 시뮬레이션 모드 스위치 상태 (실제 Stripe 키가 없을 때만 허용)
+  const canUseDemoMode = !isValidPublishableKey && Boolean(demoCheckoutAvailable);
+  const [demoModeEnabled, setDemoModeEnabled] = useState<boolean>(true);
+  const [isDemoIntent, setIsDemoIntent] = useState<boolean>(false);
 
   // PaymentIntent 단계 상태
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -284,11 +484,48 @@ export default function GiftCardForm({
   const finalChargeAmount = Math.round((currentFaceValue - discountAmount) * 100) / 100;
   const currentDesign = getCardDesign(designId);
 
+  const handleCheckoutCancel = () => {
+    setClientSecret(null);
+    setPaymentIntentId(null);
+    setAuthorizedCharge(null);
+    setIsDemoIntent(false);
+  };
+
+  const handleCheckoutSuccess = (card: GiftCard) => {
+    setIssuedCard(card);
+    handleCheckoutCancel();
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+    });
+  };
+
+  const buildCheckoutProps = (intentId: string): CheckoutStepProps => ({
+    paymentIntentId: intentId,
+    finalChargeAmount: authorizedCharge ?? finalChargeAmount,
+    currentFaceValue,
+    designId,
+    buyerName: buyerName.trim(),
+    buyerEmail: buyerEmail.trim(),
+    buyerPhone: buyerPhone.trim(),
+    recipientType,
+    recipientName: recipientType === 'gift' ? recipientName.trim() : buyerName.trim(),
+    recipientEmail: recipientType === 'gift' ? recipientEmail.trim() : buyerEmail.trim(),
+    recipientPhone: recipientType === 'gift' ? recipientPhone.trim() : buyerPhone.trim(),
+    message: message.trim(),
+    scheduledDeliveryDate: deliveryMode === 'scheduled' ? scheduledDate : '',
+    lang,
+    onCancel: handleCheckoutCancel,
+    onSuccess: handleCheckoutSuccess,
+  });
+
   const handleSelectPreset = (val: number) => {
     setIsCustom(false);
     setAmount(val);
     setClientSecret(null);
     setAuthorizedCharge(null);
+    setIsDemoIntent(false);
   };
 
   const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -301,9 +538,10 @@ export default function GiftCardForm({
     }
     setClientSecret(null);
     setAuthorizedCharge(null);
+    setIsDemoIntent(false);
   };
 
-  // 1단계: 서버에 실제 Stripe PaymentIntent 생성 요청
+  // 1단계: 서버에 실제 Stripe PaymentIntent(또는 데모 인텐트) 생성 요청
   const handlePrepareCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -344,10 +582,12 @@ export default function GiftCardForm({
       return;
     }
 
-    if (!stripePromise) {
+    const useDemo = canUseDemoMode && demoModeEnabled;
+
+    if (!stripePromise && !useDemo) {
       setFormError(
         lang === 'ko'
-          ? '유효한 Stripe 공개키(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ 또는 pk_live_)가 설정되지 않았습니다.'
+          ? '유효한 Stripe 공개키(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ 또는 pk_live_)가 설정되지 않았습니다. 테스트하려면 아래 데모 시뮬레이션 스위치를 켜 주세요.'
           : 'Stripe Publishable Key (pk_test_ or pk_live_) is not configured yet.'
       );
       return;
@@ -366,6 +606,7 @@ export default function GiftCardForm({
           recipientType,
           recipientName: recipientType === 'gift' ? recipientName.trim() : buyerName.trim(),
           recipientEmail: recipientType === 'gift' ? recipientEmail.trim() : buyerEmail.trim(),
+          demoMode: useDemo,
         }),
       });
 
@@ -376,6 +617,7 @@ export default function GiftCardForm({
 
       setClientSecret(intentData.clientSecret);
       setPaymentIntentId(intentData.paymentIntentId);
+      setIsDemoIntent(Boolean(intentData.demoMode));
       setAuthorizedCharge(
         typeof intentData.chargeAmount === 'number' ? intentData.chargeAmount : finalChargeAmount
       );
@@ -937,6 +1179,47 @@ export default function GiftCardForm({
             </div>
           </div>
 
+          {/* 데모 시뮬레이션 모드 스위치 (Stripe 키 연결 전 테스트용) */}
+          {canUseDemoMode && !clientSecret && (
+            <div className="p-3.5 rounded-2xl bg-white border border-[#c5a059]/50 flex items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#ffdea5] text-[#261900] flex items-center justify-center shrink-0 mt-0.5">
+                  <FlaskConical className="w-4 h-4 text-[#775a19]" />
+                </div>
+                <div className="text-xs">
+                  <span className="font-bold text-[#061910] block">
+                    {lang === 'ko' ? '데모 결제 시뮬레이션 모드' : 'Demo Simulation Mode'}
+                  </span>
+                  <span className="text-[11px] text-[#424844] block">
+                    {lang === 'ko'
+                      ? 'Stripe 키 연결 전 카드 승인 및 실물 바코드 발급을 테스트합니다.'
+                      : 'Test simulated card checkout & real barcode issuance without Stripe keys.'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={demoModeEnabled}
+                onClick={() => {
+                  setDemoModeEnabled((prev) => !prev);
+                  setFormError(null);
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                  demoModeEnabled ? 'bg-[#1b2e24]' : 'bg-[#c2c8c2]'
+                }`}
+                title="Toggle Demo Simulation Mode"
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    demoModeEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+
           {formError && (
             <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -944,74 +1227,69 @@ export default function GiftCardForm({
             </div>
           )}
 
-          {/* Stripe Elements 결제창 또는 결제 준비 버튼 */}
+          {/* Stripe Elements / 데모 결제창 또는 결제 준비 버튼 */}
           {!clientSecret ? (
             <div className="space-y-2.5 pt-1">
               <button
                 type="button"
                 onClick={handlePrepareCheckout}
                 disabled={isCreatingIntent || currentFaceValue < 20}
-                className="w-full py-4 rounded-xl bg-[#1b2e24] hover:bg-[#061910] text-white font-semibold text-sm tracking-wide transition shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                className={`w-full py-4 rounded-xl text-white font-semibold text-sm tracking-wide transition shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer ${
+                  canUseDemoMode && demoModeEnabled
+                    ? 'bg-[#775a19] hover:bg-[#5d4201]'
+                    : 'bg-[#1b2e24] hover:bg-[#061910]'
+                }`}
               >
                 {isCreatingIntent ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>
-                      {lang === 'ko' ? 'Stripe 보안 결제창 불러오는 중...' : 'Initializing Stripe...'}
+                      {canUseDemoMode && demoModeEnabled
+                        ? lang === 'ko'
+                          ? '데모 결제 시뮬레이터 준비 중...'
+                          : 'Initializing Demo Sandbox...'
+                        : lang === 'ko'
+                          ? 'Stripe 보안 결제창 불러오는 중...'
+                          : 'Initializing Stripe...'}
                     </span>
                   </>
                 ) : (
                   <>
-                    <CreditCard className="w-4 h-4 text-[#ffdea5]" />
+                    {canUseDemoMode && demoModeEnabled ? (
+                      <FlaskConical className="w-4 h-4 text-[#ffdea5]" />
+                    ) : (
+                      <CreditCard className="w-4 h-4 text-[#ffdea5]" />
+                    )}
                     <span>
                       ${finalChargeAmount.toFixed(2)}{' '}
-                      {lang === 'ko' ? 'Stripe 카드 결제 진행하기' : 'Proceed to Secure Checkout'}
+                      {canUseDemoMode && demoModeEnabled
+                        ? lang === 'ko'
+                          ? '데모 결제 시뮬레이션 진행하기'
+                          : 'Proceed with Demo Checkout'
+                        : lang === 'ko'
+                          ? 'Stripe 카드 결제 진행하기'
+                          : 'Proceed to Secure Checkout'}
                     </span>
                   </>
                 )}
               </button>
               <p className="text-center text-[11px] text-[#737874]">
-                {lang === 'ko'
-                  ? '256-bit 암호화 결제 · 기프트 카드는 구매 확정 후 환불이 불가합니다.'
-                  : '256-bit SSL via Stripe · Gift card sales are final and non-refundable.'}
+                {canUseDemoMode && demoModeEnabled
+                  ? lang === 'ko'
+                    ? '데모 모드 활성 상태 · 실제 카드 청구가 발생하지 않으며 실제 Stripe 키 설정 시 자동 비활성화됩니다.'
+                    : 'Demo sandbox active · $0.00 real charge · Automatically disabled once Stripe keys are configured.'
+                  : lang === 'ko'
+                    ? '256-bit 암호화 결제 · 기프트 카드는 구매 확정 후 환불이 불가합니다.'
+                    : '256-bit SSL via Stripe · Gift card sales are final and non-refundable.'}
               </p>
             </div>
+          ) : paymentIntentId && isDemoIntent ? (
+            <DemoCheckoutStep {...buildCheckoutProps(paymentIntentId)} />
           ) : (
             stripePromise &&
             paymentIntentId && (
               <Elements stripe={stripePromise} options={{ clientSecret }}>
-                <StripeCheckoutStep
-                  paymentIntentId={paymentIntentId}
-                  finalChargeAmount={authorizedCharge ?? finalChargeAmount}
-                  currentFaceValue={currentFaceValue}
-                  designId={designId}
-                  buyerName={buyerName.trim()}
-                  buyerEmail={buyerEmail.trim()}
-                  buyerPhone={buyerPhone.trim()}
-                  recipientType={recipientType}
-                  recipientName={recipientType === 'gift' ? recipientName.trim() : buyerName.trim()}
-                  recipientEmail={recipientType === 'gift' ? recipientEmail.trim() : buyerEmail.trim()}
-                  recipientPhone={recipientType === 'gift' ? recipientPhone.trim() : buyerPhone.trim()}
-                  message={message.trim()}
-                  scheduledDeliveryDate={deliveryMode === 'scheduled' ? scheduledDate : ''}
-                  lang={lang}
-                  onCancel={() => {
-                    setClientSecret(null);
-                    setPaymentIntentId(null);
-                    setAuthorizedCharge(null);
-                  }}
-                  onSuccess={(card) => {
-                    setIssuedCard(card);
-                    setClientSecret(null);
-                    setPaymentIntentId(null);
-                    setAuthorizedCharge(null);
-                    confetti({
-                      particleCount: 100,
-                      spread: 70,
-                      origin: { y: 0.6 },
-                    });
-                  }}
-                />
+                <StripeCheckoutStep {...buildCheckoutProps(paymentIntentId)} />
               </Elements>
             )
           )}

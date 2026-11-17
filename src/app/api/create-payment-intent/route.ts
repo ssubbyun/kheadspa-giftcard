@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
       recipientType,
       recipientName,
       recipientEmail,
+      demoMode,
     } = body;
 
     const amount = Number(faceValue);
@@ -44,12 +45,14 @@ export async function POST(req: NextRequest) {
 
     // 서버 사이드 프로모션 할인 재계산
     const calculation = calculatePromotionDiscount(amount);
+    const requestedDemoMode = Boolean(demoMode);
 
-    // 실제 Stripe PaymentIntent 생성 (실패 시 예외 발생 — 모의 결제 전환 없음)
+    // 실제 Stripe PaymentIntent 또는 허용된 데모 결제 인텐트 생성
     const paymentIntent = await createStripePaymentIntent({
       amountInDollars: calculation.chargeAmount,
       faceValue: calculation.faceValue,
       buyerEmail: String(buyerEmail).trim(),
+      demoMode: requestedDemoMode,
       metadata: {
         buyerName: String(buyerName).trim(),
         recipientType: recipientType || 'self',
@@ -63,6 +66,7 @@ export async function POST(req: NextRequest) {
       {
         clientSecret: paymentIntent.clientSecret,
         paymentIntentId: paymentIntent.paymentIntentId,
+        demoMode: Boolean(paymentIntent.demoMode),
         faceValue: calculation.faceValue,
         chargeAmount: calculation.chargeAmount,
         discountAmount: calculation.discountAmount,
