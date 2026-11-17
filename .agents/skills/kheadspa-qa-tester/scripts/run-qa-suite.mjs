@@ -491,6 +491,32 @@ function runStaticChecks(invariants) {
     }
   });
 
+  // QA-24: Stitch UI design tokens, buy-section anchor, and zero external CDN script leakage
+  check('QA-24', 'Stitch UI design tokens, buy-section anchor, and zero external CDN script leakage', () => {
+    const cssSrc = readText('src/app/globals.css');
+    if (!cssSrc.includes('--stitch-bg') || !cssSrc.includes('--stitch-primary')) {
+      throw new Error('src/app/globals.css is missing --stitch-* design tokens');
+    }
+
+    const formSrc = readText('src/components/GiftCardForm.tsx');
+    if (!formSrc.includes('id="buy-section"')) {
+      throw new Error('src/components/GiftCardForm.tsx must preserve id="buy-section" anchor');
+    }
+
+    const uiFiles = [
+      ...listFilesRecursive(path.join(ROOT_DIR, 'src', 'components'), ['.tsx']),
+      path.join(ROOT_DIR, 'src', 'app', 'page.tsx'),
+      path.join(ROOT_DIR, 'src', 'app', 'layout.tsx'),
+    ];
+    for (const file of uiFiles) {
+      if (!fs.existsSync(file)) continue;
+      const src = fs.readFileSync(file, 'utf-8');
+      if (src.includes('cdn.tailwindcss.com') || src.includes('lh3.googleusercontent.com/aida')) {
+        throw new Error(`External Stitch CDN script or mockup URL leaked into ${path.relative(ROOT_DIR, file)}`);
+      }
+    }
+  });
+
   return results;
 }
 

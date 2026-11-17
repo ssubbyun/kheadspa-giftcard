@@ -51,3 +51,10 @@ functions/lib/
 # agent temporary reports (keep skills and memory versioned)
 .agents/reports/
 
+# MCP & Stitch local secrets / temporary outputs
+.mcp.json
+secrets/*.env
+secrets/*.json
+!secrets/*.example
+scripts/stitch_gen_res.json
+

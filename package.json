@@ -11,7 +11,10 @@
     "deploy:firebase": "pnpm build:firebase && npx firebase-tools deploy",
     "qa": "node .agents/skills/kheadspa-qa-tester/scripts/run-qa-suite.mjs",
     "qa:impact": "node .agents/skills/kheadspa-bug-hunter/scripts/analyze-impact.mjs",
-    "qa:verify-fix": "node .agents/skills/kheadspa-code-fixer/scripts/verify-fix-safety.mjs"
+    "qa:verify-fix": "node .agents/skills/kheadspa-code-fixer/scripts/verify-fix-safety.mjs",
+    "stitch:projects": "node scripts/stitch-mcp.mjs list-projects",
+    "stitch:generate": "node scripts/generate_stitch_ui.mjs",
+    "stitch:download": "node scripts/download_stitch_html.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^7.1.0",

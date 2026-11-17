@@ -38,52 +38,51 @@ export default function PromotionBanner({ onScrollToBuy, lang }: PromotionBanner
   }, []);
 
   return (
-    <div className="bg-[#1A1816] text-[#FBF9F5] border-b border-[#35302B] sticky top-0 z-50 shadow-md">
-      <div className="max-w-7xl mx-auto px-4 py-3 sm:py-3.5 flex flex-col md:flex-row items-center justify-between gap-3 text-xs sm:text-sm">
-        
-        {/* 프로모션 타이틀 & 배지 */}
+    <div className="bg-[#1b2e24] text-[#fff8f5] border-b border-[#c5a059]/25 shadow-[0_2px_12px_rgba(6,25,16,0.12)]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-col md:flex-row items-center justify-between gap-2.5 text-xs">
+        {/* 프로모션 타이틀 & 샴페인 골드 배지 */}
         <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-start">
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase bg-amber-500/20 text-amber-300 border border-amber-400/30">
-            <Sparkles className="w-3 h-3 text-amber-400 animate-spin" style={{ animationDuration: '6s' }} />
-            {lang === 'ko' ? '11월 특별 프로모션' : 'NOVEMBER SPECIAL'}
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-[0.14em] uppercase bg-[#ffdea5]/15 text-[#ffdea5] border border-[#e9c176]/35">
+            <Sparkles className="w-3 h-3 text-[#e9c176] animate-spin" style={{ animationDuration: '6s' }} />
+            {lang === 'ko' ? '11월 특별 프로모션' : 'SEASONAL PRIVILEGE'}
           </span>
-          <p className="font-medium text-stone-200">
-            <strong className="text-amber-300 font-bold">
+          <p className="font-medium text-[#fef1e9]">
+            <strong className="text-[#ffdea5] font-semibold">
               {lang === 'ko' ? '기프트 카드 20% 특별 할인' : '20% OFF Holiday Gift Cards'}
             </strong>
-            <span className="text-stone-400 ml-2">
+            <span className="text-[#d1e8d9]/80 ml-2">
               {lang === 'ko'
-                ? '($200 액면가 구매 시 $160 결제 · 구매일로부터 2년 유효)'
-                : '($200 card value for only $160 · Valid for 2 years)'}
+                ? '($200 액면가 구매 시 $160 결제 · 2년 유효)'
+                : '($200 Value for $160 · 2-Year Validity)'}
             </span>
           </p>
         </div>
 
         {/* 카운트다운 타이머 & CTA 버튼 */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-stone-900/80 border border-stone-800 text-stone-300 text-xs font-mono">
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-stone-400 font-sans text-[11px] hidden sm:inline">
-              {lang === 'ko' ? '마감까지:' : 'Ends in:'}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#061910]/65 border border-[#c5a059]/25 text-[#d1e8d9] text-[11px] font-mono">
+            <Clock className="w-3 h-3 text-[#e9c176]" />
+            <span className="text-[#b6ccbd] font-sans text-[10px] uppercase tracking-wider hidden sm:inline">
+              {lang === 'ko' ? '마감까지' : 'Ends in'}
             </span>
             {timeLeft ? (
-              <span className="text-amber-400 font-bold tracking-wider">
+              <span className="text-[#ffdea5] font-semibold tracking-wider">
                 {timeLeft.days}d {String(timeLeft.hours).padStart(2, '0')}h {String(timeLeft.minutes).padStart(2, '0')}m {String(timeLeft.seconds).padStart(2, '0')}s
               </span>
             ) : (
-              <span className="text-stone-400">Loading...</span>
+              <span className="text-[#b6ccbd]">...</span>
             )}
           </div>
 
           <button
+            type="button"
             onClick={onScrollToBuy}
-            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold text-xs transition duration-150 shadow-sm"
+            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-[#ffdea5] hover:bg-[#e9c176] text-[#061910] font-semibold text-[11px] tracking-wide transition duration-150 shadow-sm cursor-pointer"
           >
             <span>{lang === 'ko' ? '할인 구매하기' : 'Shop Now'}</span>
             <ArrowRight className="w-3 h-3" />
           </button>
         </div>
-
       </div>
     </div>
   );

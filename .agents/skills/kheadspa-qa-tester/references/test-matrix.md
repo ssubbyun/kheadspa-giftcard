@@ -27,3 +27,4 @@
 | `QA-21` | 재발송 연락처 검증 | `validateResendContacts` 잘못된 이메일/전화번호 입력 검증 | 잘못된 형식 거부(`valid: false`), 빈 값 유지 허용, 정상 값 E.164 변환 |
 | `QA-22` | 금액 상한 & 선물 수신자 | `create-payment-intent` & `issue` 양쪽 백엔드 `$20~$2,000` 및 `recipientEmail` 검증 | `isValidDollarCents(amount, 20, 2000)` 및 `isValidEmail` 양쪽 동기화 |
 | `QA-23` | 전체 ESLint 게이트 | `pnpm lint` 실행 (`src/` 및 `functions/src/`) | ESLint 에러 및 경고 0건 (Exit Code 0) |
+| `QA-24` | Stitch UI 토큰 & 안전성 | `globals.css` `--stitch-*` 토큰, `buy-section` 앵커 및 외부 CDN 스크립트 누출 점검 | 토큰·앵커 존재, `cdn.tailwindcss.com` 및 Stitch 목업 URL 누출 0건 |
