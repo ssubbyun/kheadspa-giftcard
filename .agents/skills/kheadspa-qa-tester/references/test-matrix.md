@@ -29,4 +29,5 @@
 | `QA-23` | 전체 ESLint 게이트 | `pnpm lint` 실행 (`src/` 및 `functions/src/`) | ESLint 에러 및 경고 0건 (Exit Code 0) |
 | `QA-24` | Stitch UI 토큰 & 안전성 | `globals.css` `--stitch-*` 토큰, `buy-section` 앵커 및 외부 CDN 스크립트 누출 점검 | 토큰·앵커 존재, `cdn.tailwindcss.com` 및 Stitch 목업 URL 누출 0건 |
 | `QA-25` | 무제한 유효기간 전수 검사 | `src/` 및 `functions/src/` 내 `2년`/`2-Year` 문구 및 `new Date(...expiresAt)` 점검 | 잔존 2년 만료 문구 및 `new Date(null)` 위험 호출 0건 |
-| `QA-26` | 데모 시뮬레이션 & 자동 잠금 | `pi_demo_` HMAC 서명 검증, 금액 위변조 차단, 실키(`sk_live_`) 입력 시 자동 비활성화 | 서명 일치 시 통과, 위변조/서명 불일치 거부, 실제 키 설정 시 `isDemoCheckoutAllowed() === false` |
+| `QA-26` | 데모 시뮬레이션 & 자동 잠금 | `pi_demo_` HMAC 서명 검증, 금액 위변조 차단, 실키(`sk_live_`) 또는 `production` 환경에서 자동 비활성화 | 스테이징 서명 통과, `APP_ENV=production`·위변조·실키 설정 시 `false`/거부 |
+| `QA-27` | 환경 분리 & `TEST-` 접두어 | `staging` 시 `TEST-` 발급 및 `KSPA-` ↔ `TEST-` 교차 조회·차감 차단 검증 | `staging`은 `TEST-` 생성 + `KSPA-` 차단, `production`은 `TEST-` 조회·차감 차단 |

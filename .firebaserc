@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "kheadspa-giftcard"
+    "default": "kheadspa-giftcard-staging",
+    "staging": "kheadspa-giftcard-staging",
+    "production": "kheadspa-giftcard",
+    "prod": "kheadspa-giftcard"
   }
 }

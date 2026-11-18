@@ -92,6 +92,13 @@ export default function Home() {
   const [demoCheckoutAvailable, setDemoCheckoutAvailable] = useState<boolean>(
     process.env.NEXT_PUBLIC_DEMO_CHECKOUT === 'true'
   );
+  const [appEnv, setAppEnv] = useState<'production' | 'staging' | 'development'>(
+    process.env.NEXT_PUBLIC_APP_ENV === 'staging'
+      ? 'staging'
+      : process.env.NEXT_PUBLIC_APP_ENV === 'development'
+        ? 'development'
+        : 'production'
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +112,9 @@ export default function Home() {
         setDiscountRate(active && rate > 0 ? rate : 0);
         if (typeof data.demoCheckoutAvailable === 'boolean') {
           setDemoCheckoutAvailable(data.demoCheckoutAvailable);
+        }
+        if (data.appEnv === 'staging' || data.appEnv === 'development' || data.appEnv === 'production') {
+          setAppEnv(data.appEnv);
         }
       })
       .catch(() => {
@@ -171,6 +181,7 @@ export default function Home() {
           setActiveTab={handleSetTab}
           lang={lang}
           setLang={setLang}
+          appEnv={appEnv}
           onResetVoucher={exitVoucher}
         />
       </div>
@@ -271,6 +282,7 @@ export default function Home() {
                         recipientName={recipientName}
                         designId={designId}
                         lang={lang}
+                        appEnv={appEnv}
                       />
                     </div>
 
@@ -503,11 +515,11 @@ export default function Home() {
 
               {/* TAB 2: 잔액 조회 */}
               {activeTab === 'check' && (
-                <BalanceTracker lang={lang} onOpenVoucher={openVoucher} />
+                <BalanceTracker lang={lang} appEnv={appEnv} onOpenVoucher={openVoucher} />
               )}
 
               {/* TAB 3: 매장 직원용 차감 POS */}
-              {activeTab === 'staff' && <StaffTerminal lang={lang} />}
+              {activeTab === 'staff' && <StaffTerminal lang={lang} appEnv={appEnv} />}
             </>
           )}
         </div>

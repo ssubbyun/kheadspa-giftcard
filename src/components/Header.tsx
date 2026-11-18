@@ -8,6 +8,7 @@ interface HeaderProps {
   setActiveTab: (tab: 'buy' | 'check' | 'staff') => void;
   lang: 'ko' | 'en';
   setLang: (lang: 'ko' | 'en') => void;
+  appEnv?: 'production' | 'staging' | 'development';
   onResetVoucher?: () => void;
 }
 
@@ -19,6 +20,7 @@ export default function Header({
   setActiveTab,
   lang,
   setLang,
+  appEnv = 'production',
   onResetVoucher,
 }: HeaderProps) {
   const handleTabChange = (tab: 'buy' | 'check' | 'staff') => {
@@ -42,6 +44,11 @@ export default function Header({
               <span className="font-serif-luxury text-lg sm:text-2xl font-semibold tracking-wider text-[#061910] uppercase leading-none">
                 K-headspa &amp; wellness
               </span>
+              {appEnv !== 'production' && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-400 text-amber-900 text-[10px] font-bold uppercase tracking-wider shrink-0">
+                  {appEnv === 'staging' ? 'STAGING · TEST' : 'DEV · TEST'}
+                </span>
+              )}
             </div>
             <span className="block text-[10px] uppercase tracking-[0.18em] text-[#775a19] font-semibold mt-1">
               Manhattan · Norwood · Fort Lee

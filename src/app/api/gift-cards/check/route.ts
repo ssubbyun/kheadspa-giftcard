@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGiftCardByCodeAsync } from '@/lib/storage';
-import { generateCode128DataUrl, getErrorMessage, normalizeGiftCardCode } from '@/lib/barcode';
+import {
+  generateCode128DataUrl,
+  getErrorMessage,
+  normalizeGiftCardCode,
+  validateCodeEnvironmentMatch,
+} from '@/lib/barcode';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
 
@@ -21,6 +26,14 @@ export async function GET(req: NextRequest) {
   if (!code) {
     return NextResponse.json(
       { error: '기프트 카드 코드를 입력해 주세요.' },
+      { status: 400, headers: NO_STORE_HEADERS }
+    );
+  }
+
+  const envCheck = validateCodeEnvironmentMatch(code);
+  if (!envCheck.allowed) {
+    return NextResponse.json(
+      { error: envCheck.reason },
       { status: 400, headers: NO_STORE_HEADERS }
     );
   }

@@ -11,6 +11,7 @@ interface GiftCardHeroProps {
   recipientName: string;
   designId?: GiftCardDesignId;
   lang: 'ko' | 'en';
+  appEnv?: 'production' | 'staging' | 'development';
 }
 
 export default function GiftCardHero({
@@ -19,9 +20,11 @@ export default function GiftCardHero({
   recipientName,
   designId,
   lang,
+  appEnv = 'production',
 }: GiftCardHeroProps) {
   const chargeAmount = Math.round(amount * (1 - discountRate / 100) * 100) / 100;
   const design = getCardDesign(designId);
+  const passPrefix = appEnv === 'production' ? 'KSPA' : 'TEST';
 
   return (
     <div className="space-y-6">
@@ -32,7 +35,7 @@ export default function GiftCardHero({
           {lang === 'ko' ? '실시간 디지털 바우처 미리보기' : 'Live Sanctuary Pass Preview'}
         </span>
         <span className="text-[11px] font-mono text-[#737874]">
-          KSPA · DIGITAL PASS
+          {passPrefix} · DIGITAL PASS
         </span>
       </div>
 

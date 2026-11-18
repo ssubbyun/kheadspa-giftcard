@@ -13,9 +13,12 @@ import {
 } from './firebase';
 import {
   generateCode128DataUrl,
+  getGiftCardCodePrefix,
+  isTestEnvironment,
   isValidDollarCents,
   normalizeGiftCardCode,
   normalizeUsPhone,
+  validateCodeEnvironmentMatch,
 } from './barcode';
 
 // 1. 활성 프로모션: 11월 30일까지 20% 특별 할인
@@ -109,11 +112,11 @@ export function calculatePromotionDiscount(amount: number): {
   };
 }
 
-// 16자리 코드 생성 (e.g. KSPA-8F2A-99B4-102C)
+// 16자리 코드 생성 (실운영 KSPA-XXXX-XXXX-XXXX / 테스트 TEST-XXXX-XXXX-XXXX)
 export function generateGiftCardCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const segment = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  return `KSPA-${segment()}-${segment()}-${segment()}`;
+  return `${getGiftCardCodePrefix()}-${segment()}-${segment()}-${segment()}`;
 }
 
 // EST 기준 오늘 날짜 (YYYY-MM-DD)
@@ -137,7 +140,7 @@ export function getVoucherUrl(code: string): string {
 // 초기 샘플 카드 시딩 (로컬 모드용)
 async function seedInitialCard() {
   if (isFirebaseConfigured()) return;
-  const demoCode = 'KSPA-HOLIDAY-2026';
+  const demoCode = isTestEnvironment() ? 'TEST-HOLIDAY-2026' : 'KSPA-HOLIDAY-2026';
   if (!localStore.cards[demoCode]) {
     const createdAt = '2026-11-10T10:00:00Z';
     const qrDataUrl = await QRCode.toDataURL(getVoucherUrl(demoCode), { margin: 1, width: 240 });
@@ -209,6 +212,11 @@ seedInitialCard().catch(console.error);
 export async function getGiftCardByCodeAsync(code: string): Promise<{ card?: GiftCard; transactions: GiftCardTransaction[] }> {
   const normalized = normalizeGiftCardCode(code);
   if (!normalized) return { transactions: [] };
+
+  const envCheck = validateCodeEnvironmentMatch(normalized);
+  if (!envCheck.allowed) {
+    return { transactions: [] };
+  }
 
   if (isFirebaseConfigured()) {
     const card = await getGiftCardFromFirebase(normalized);
@@ -350,6 +358,14 @@ export async function redeemGiftCardAsync(params: {
   staffNote?: string;
 }): Promise<{ success: boolean; message: string; card?: GiftCard; remainingBalance?: number }> {
   const normalizedCode = normalizeGiftCardCode(params.code);
+
+  const envCheck = validateCodeEnvironmentMatch(normalizedCode);
+  if (!envCheck.allowed) {
+    return {
+      success: false,
+      message: envCheck.reason || '현재 서버 환경과 일치하지 않는 기프트 카드입니다.',
+    };
+  }
 
   if (!isValidDollarCents(params.redeemAmount, 0.01, 10000)) {
     return {

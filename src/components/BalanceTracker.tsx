@@ -19,6 +19,7 @@ const BOOKING_URL =
 
 interface BalanceTrackerProps {
   lang: 'ko' | 'en';
+  appEnv?: 'production' | 'staging' | 'development';
   onOpenVoucher?: (code: string) => void;
 }
 
@@ -47,7 +48,12 @@ interface SafeTransaction {
   createdAt: string;
 }
 
-export default function BalanceTracker({ lang, onOpenVoucher }: BalanceTrackerProps) {
+export default function BalanceTracker({
+  lang,
+  appEnv = 'production',
+  onOpenVoucher,
+}: BalanceTrackerProps) {
+  const codePlaceholder = appEnv === 'production' ? 'KSPA-XXXX-XXXX-XXXX' : 'TEST-XXXX-XXXX-XXXX';
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [card, setCard] = useState<SafeGiftCard | null>(null);
@@ -108,7 +114,7 @@ export default function BalanceTracker({ lang, onOpenVoucher }: BalanceTrackerPr
           <div className="flex flex-col sm:flex-row gap-2.5">
             <input
               type="text"
-              placeholder="KSPA-XXXX-XXXX-XXXX"
+              placeholder={codePlaceholder}
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               className="flex-1 font-mono uppercase text-sm px-4 py-3 rounded-xl border border-[#c2c8c2] focus:outline-none focus:ring-2 focus:ring-[#c5a059] bg-[#fef1e9] text-[#061910]"

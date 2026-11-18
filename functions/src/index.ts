@@ -18,11 +18,14 @@ import {
 } from '../../src/lib/stripe';
 import {
   generateCode128DataUrl,
+  getAppEnv,
   getErrorMessage,
+  getGiftCardCodePrefix,
   isValidDollarCents,
   isValidEmail,
   normalizeGiftCardCode,
   normalizeUsPhone,
+  validateCodeEnvironmentMatch,
   validateResendContacts,
 } from '../../src/lib/barcode';
 import { dispatchGiftCardNotifications } from '../../src/lib/notifications';
@@ -129,6 +132,8 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
       serverTime: new Date().toISOString(),
       isPromoActive: calc200.isPromoActive,
       demoCheckoutAvailable: isDemoCheckoutAllowed(),
+      appEnv: getAppEnv(),
+      cardCodePrefix: getGiftCardCodePrefix(),
       sampleCalculation: {
         faceValue: 200,
         chargeAmount: calc200.chargeAmount,
@@ -219,6 +224,12 @@ export const api = onRequest({ region: 'us-central1', invoker: 'public' }, async
 
     if (!code) {
       res.status(400).json({ error: '기프트 카드 코드를 입력해 주세요.' });
+      return;
+    }
+
+    const envCheck = validateCodeEnvironmentMatch(code);
+    if (!envCheck.allowed) {
+      res.status(400).json({ error: envCheck.reason });
       return;
     }
 

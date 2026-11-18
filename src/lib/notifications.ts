@@ -1,6 +1,11 @@
 import { DeliveryStatus, GiftCard } from '@/types/gift-card';
 import { getCardDesign } from './card-designs';
-import { generateCode128DataUrl, getErrorMessage, normalizeUsPhone } from './barcode';
+import {
+  generateCode128DataUrl,
+  getErrorMessage,
+  isTestEnvironment,
+  normalizeUsPhone,
+} from './barcode';
 import {
   getAppBaseUrl,
   getTodayEstDateString,
@@ -288,12 +293,14 @@ export async function dispatchGiftCardNotifications(
   const recipientEmail = (card.recipientEmail || card.buyerEmail || '').trim();
   const recipientPhone = card.recipientPhone || (card.recipientType === 'self' ? card.buyerPhone : undefined);
 
+  const subjectPrefix = isTestEnvironment() ? '[TEST] ' : '';
+
   if (isFuture) {
     let buyerReceipt: ChannelDispatchResult | undefined;
     if (card.buyerEmail) {
       buyerReceipt = await sendResendEmail({
         to: card.buyerEmail,
-        subject: `[K-headspa & wellness] Gift Card Order Scheduled (${card.scheduledDeliveryDate})`,
+        subject: `${subjectPrefix}[K-headspa & wellness] Gift Card Order Scheduled (${card.scheduledDeliveryDate})`,
         html: buildBuyerReceiptHtml(card, true),
       });
     }
@@ -312,13 +319,15 @@ export async function dispatchGiftCardNotifications(
   }
 
   // 즉시 발송 처리 (이메일 + SMS 동시 시도)
+  const recipientSubject =
+    card.recipientType === 'gift'
+      ? `${card.buyerName} sent you a $${card.initialBalance.toFixed(0)} K-headspa & wellness Gift Card`
+      : `Your $${card.initialBalance.toFixed(0)} K-headspa & wellness Gift Card`;
+
   const emailPromise = recipientEmail
     ? sendResendEmail({
         to: recipientEmail,
-        subject:
-          card.recipientType === 'gift'
-            ? `${card.buyerName} sent you a $${card.initialBalance.toFixed(0)} K-headspa & wellness Gift Card`
-            : `Your $${card.initialBalance.toFixed(0)} K-headspa & wellness Gift Card`,
+        subject: `${subjectPrefix}${recipientSubject}`,
         html: buildRecipientEmailHtml(card),
       })
     : Promise.resolve<ChannelDispatchResult>({
@@ -330,8 +339,8 @@ export async function dispatchGiftCardNotifications(
   const voucherUrl = getVoucherUrl(card.code);
   const smsBody =
     card.recipientType === 'gift'
-      ? `[K-headspa & wellness] ${card.buyerName} sent you a $${card.initialBalance.toFixed(2)} Gift Card! Code: ${card.code}. Show barcode at checkout or book a service: ${voucherUrl}`
-      : `[K-headspa & wellness] Your $${card.initialBalance.toFixed(2)} Gift Card is ready! Code: ${card.code}. Show barcode or book a service: ${voucherUrl}`;
+      ? `${subjectPrefix}[K-headspa & wellness] ${card.buyerName} sent you a $${card.initialBalance.toFixed(2)} Gift Card! Code: ${card.code}. Show barcode at checkout or book a service: ${voucherUrl}`
+      : `${subjectPrefix}[K-headspa & wellness] Your $${card.initialBalance.toFixed(2)} Gift Card is ready! Code: ${card.code}. Show barcode or book a service: ${voucherUrl}`;
 
   const smsPromise = sendTwilioSms({
     to: recipientPhone,
@@ -344,7 +353,7 @@ export async function dispatchGiftCardNotifications(
     card.buyerEmail.toLowerCase() !== recipientEmail.toLowerCase()
       ? sendResendEmail({
           to: card.buyerEmail,
-          subject: `[K-headspa & wellness] Gift Card Receipt & Delivery Confirmation`,
+          subject: `${subjectPrefix}[K-headspa & wellness] Gift Card Receipt & Delivery Confirmation`,
           html: buildBuyerReceiptHtml(card, false),
         })
       : Promise.resolve<ChannelDispatchResult | undefined>(undefined);

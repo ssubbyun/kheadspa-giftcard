@@ -18,6 +18,7 @@ import { getErrorMessage, normalizeGiftCardCode } from '@/lib/barcode';
 
 interface StaffTerminalProps {
   lang: 'ko' | 'en';
+  appEnv?: 'production' | 'staging' | 'development';
 }
 
 interface SafeCardView {
@@ -31,7 +32,11 @@ interface SafeCardView {
   expiresAt: string | null;
 }
 
-export default function StaffTerminal({ lang }: StaffTerminalProps) {
+export default function StaffTerminal({ lang, appEnv = 'production' }: StaffTerminalProps) {
+  const codePlaceholder =
+    appEnv === 'production'
+      ? 'KSPA-XXXX-XXXX-XXXX (or scan with barcode reader)'
+      : 'TEST-XXXX-XXXX-XXXX (staging/dev test card)';
   const [staffPin, setStaffPin] = useState('');
   const [location, setLocation] = useState<'Manhattan' | 'Norwood' | 'Fort Lee'>('Manhattan');
   const [staffName, setStaffName] = useState('');
@@ -281,7 +286,7 @@ export default function StaffTerminal({ lang }: StaffTerminalProps) {
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="KSPA-XXXX-XXXX-XXXX (or scan with barcode reader)"
+              placeholder={codePlaceholder}
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               className="flex-1 font-mono uppercase px-3.5 py-2.5 rounded-xl border border-[#c2c8c2] bg-[#fef1e9] text-[#061910] focus:outline-none focus:ring-2 focus:ring-[#c5a059]"

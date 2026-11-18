@@ -21,7 +21,56 @@ function escapeXml(str: string): string {
 }
 
 /**
- * 스캐너 입력(하이픈 생략, 전체 바우처 URL 등)을 표준 기프트 카드 코드(KSPA-XXXX-XXXX-XXXX)로 정규화합니다.
+ * 실행 환경(production / staging / development)을 판별합니다.
+ */
+export type AppEnv = 'production' | 'staging' | 'development';
+
+export function getAppEnv(): AppEnv {
+  const raw = (process.env.APP_ENV || process.env.NEXT_PUBLIC_APP_ENV || '')
+    .trim()
+    .toLowerCase();
+  if (raw === 'staging' || raw === 'test') return 'staging';
+  if (raw === 'development' || raw === 'dev') return 'development';
+  return 'production';
+}
+
+export function isTestEnvironment(): boolean {
+  return getAppEnv() !== 'production';
+}
+
+export function getGiftCardCodePrefix(): 'TEST' | 'KSPA' {
+  return isTestEnvironment() ? 'TEST' : 'KSPA';
+}
+
+/**
+ * 현재 서버 환경과 기프트 카드 코드 접두어(TEST- vs KSPA-) 일치 여부를 검증합니다.
+ */
+export function validateCodeEnvironmentMatch(code: string): {
+  allowed: boolean;
+  reason?: string;
+} {
+  const normalized = normalizeGiftCardCode(code);
+  if (!normalized) {
+    return { allowed: false, reason: '기프트 카드 코드를 입력해 주세요.' };
+  }
+  const env = getAppEnv();
+  if (env === 'production' && normalized.startsWith('TEST-')) {
+    return {
+      allowed: false,
+      reason: '테스트 환경(TEST-)에서 발급된 기프트 카드는 실운영 매장에서 사용할 수 없습니다.',
+    };
+  }
+  if (env === 'staging' && normalized.startsWith('KSPA-')) {
+    return {
+      allowed: false,
+      reason: '실운영(KSPA-) 기프트 카드는 스테이징 테스트 서버에서 조회하거나 차감할 수 없습니다.',
+    };
+  }
+  return { allowed: true };
+}
+
+/**
+ * 스캐너 입력(하이픈 생략, 전체 바우처 URL 등)을 표준 기프트 카드 코드(KSPA-/TEST-)로 정규화합니다.
  */
 export function normalizeGiftCardCode(raw: string): string {
   let value = (raw || '').trim();
@@ -44,9 +93,9 @@ export function normalizeGiftCardCode(raw: string): string {
   }
 
   const compact = value.replace(/\s+/g, '').toUpperCase();
-  const compact16 = compact.match(/^KSPA([A-Z0-9]{4})([A-Z0-9]{4})([A-Z0-9]{4})$/);
+  const compact16 = compact.match(/^(KSPA|TEST)([A-Z0-9]{4})([A-Z0-9]{4})([A-Z0-9]{4})$/);
   if (compact16) {
-    return `KSPA-${compact16[1]}-${compact16[2]}-${compact16[3]}`;
+    return `${compact16[1]}-${compact16[2]}-${compact16[3]}-${compact16[4]}`;
   }
 
   return compact;

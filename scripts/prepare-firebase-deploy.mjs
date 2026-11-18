@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import * as esbuild from 'esbuild';
 
 const rootDir = process.cwd();
@@ -7,6 +8,22 @@ const firebasePublicDir = path.join(rootDir, '.firebase-public');
 const nextDir = path.join(rootDir, '.next');
 const publicDir = path.join(rootDir, 'public');
 const functionsDir = path.join(rootDir, 'functions');
+
+function parseTargetArg(argv) {
+  let target = 'staging';
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--target' && argv[i + 1]) {
+      target = argv[++i].trim().toLowerCase();
+    } else if (arg.startsWith('--target=')) {
+      target = arg.slice('--target='.length).trim().toLowerCase();
+    }
+  }
+  if (target !== 'staging' && target !== 'production') {
+    throw new Error(`Invalid --target "${target}". Expected "staging" or "production".`);
+  }
+  return target;
+}
 
 function copyDirSync(src, dest) {
   if (!fs.existsSync(src)) return;
@@ -21,7 +38,7 @@ function copyFileIfExists(src, dest) {
   return true;
 }
 
-function parseEnvFile(filePath) {
+export function parseEnvFile(filePath) {
   const result = {};
   if (!fs.existsSync(filePath)) return result;
   const content = fs.readFileSync(filePath, 'utf-8');
@@ -51,11 +68,9 @@ function formatEnvValue(val) {
   return str;
 }
 
-function isPlaceholder(val) {
-  return !val || val.includes('sample') || val.includes('placeholder');
-}
-
 async function main() {
+  const target = parseTargetArg(process.argv.slice(2));
+
   // 1. .firebase-public 초기화 및 정적 에셋 복사
   if (fs.existsSync(firebasePublicDir)) {
     fs.rmSync(firebasePublicDir, { recursive: true, force: true });
@@ -106,59 +121,57 @@ async function main() {
     ],
   });
 
-  // 3. functions/.env 동기화 (예약 접두어 FIREBASE_*, GCLOUD_*, K_*, PORT 절대 제외)
-  const functionsEnvPath = path.join(functionsDir, '.env');
-  const localEnv = parseEnvFile(path.join(rootDir, '.env.local'));
-  const existingFuncEnv = parseEnvFile(functionsEnvPath);
+  // 3. functions/.env 타겟 전용 동기화 (staging <-> production 교차 오염 방지, 예약 접두어 제외)
+  const targetEnvPath = path.join(rootDir, `.env.${target}`);
+  const fallbackExamplePath = path.join(rootDir, `.env.${target}.example`);
+  const sourceEnvPath = fs.existsSync(targetEnvPath) ? targetEnvPath : fallbackExamplePath;
+  const targetEnv = parseEnvFile(sourceEnvPath);
 
-  const pickSecret = (key, fallback) => {
-    const fromLocal = localEnv[key];
-    const fromExisting = existingFuncEnv[key];
-    if (!isPlaceholder(fromLocal)) return fromLocal;
-    if (!isPlaceholder(fromExisting)) return fromExisting;
-    return fromLocal || fromExisting || fallback;
-  };
-
-  const pickAppUrl = () => {
-    const fromExisting = existingFuncEnv.NEXT_PUBLIC_APP_URL;
-    if (fromExisting && !fromExisting.includes('localhost')) return fromExisting;
-    const fromLocal = localEnv.NEXT_PUBLIC_APP_URL;
-    if (fromLocal && !fromLocal.includes('localhost')) return fromLocal;
-    return 'https://gift.kheadspawellness.com';
-  };
+  const defaultAppUrl =
+    target === 'production'
+      ? 'https://gift.kheadspawellness.com'
+      : 'https://kheadspa-giftcard-staging.web.app';
 
   const syncedEnv = {
-    STRIPE_SECRET_KEY: pickSecret('STRIPE_SECRET_KEY', 'sk_test_sample'),
+    APP_ENV: target,
+    STRIPE_SECRET_KEY:
+      targetEnv.STRIPE_SECRET_KEY ||
+      (target === 'production' ? 'sk_live_placeholder' : 'sk_test_sample'),
     ALLOW_DEMO_CHECKOUT:
-      localEnv.ALLOW_DEMO_CHECKOUT || existingFuncEnv.ALLOW_DEMO_CHECKOUT || 'true',
-    STAFF_PORTAL_PIN: localEnv.STAFF_PORTAL_PIN || existingFuncEnv.STAFF_PORTAL_PIN || '1234',
-    NEXT_PUBLIC_APP_URL: pickAppUrl(),
+      target === 'production'
+        ? 'false'
+        : targetEnv.ALLOW_DEMO_CHECKOUT || 'true',
+    STAFF_PORTAL_PIN: targetEnv.STAFF_PORTAL_PIN || '1234',
+    NEXT_PUBLIC_APP_URL: targetEnv.NEXT_PUBLIC_APP_URL || defaultAppUrl,
     NEXT_PUBLIC_BOOKING_URL:
-      localEnv.NEXT_PUBLIC_BOOKING_URL ||
-      existingFuncEnv.NEXT_PUBLIC_BOOKING_URL ||
+      targetEnv.NEXT_PUBLIC_BOOKING_URL ||
       'https://kheadspawellness.glossgenius.com',
-    RESEND_API_KEY: localEnv.RESEND_API_KEY || existingFuncEnv.RESEND_API_KEY || '',
+    RESEND_API_KEY: targetEnv.RESEND_API_KEY || '',
     EMAIL_FROM:
-      localEnv.EMAIL_FROM ||
-      existingFuncEnv.EMAIL_FROM ||
-      'K-headspa & wellness <noreply@kheadspawellness.com>',
-    TWILIO_ACCOUNT_SID:
-      localEnv.TWILIO_ACCOUNT_SID || existingFuncEnv.TWILIO_ACCOUNT_SID || '',
-    TWILIO_AUTH_TOKEN:
-      localEnv.TWILIO_AUTH_TOKEN || existingFuncEnv.TWILIO_AUTH_TOKEN || '',
-    TWILIO_FROM_NUMBER:
-      localEnv.TWILIO_FROM_NUMBER || existingFuncEnv.TWILIO_FROM_NUMBER || '',
+      targetEnv.EMAIL_FROM ||
+      (target === 'production'
+        ? 'K-headspa & wellness <noreply@kheadspawellness.com>'
+        : 'K-headspa & wellness [TEST] <noreply@kheadspawellness.com>'),
+    TWILIO_ACCOUNT_SID: targetEnv.TWILIO_ACCOUNT_SID || '',
+    TWILIO_AUTH_TOKEN: targetEnv.TWILIO_AUTH_TOKEN || '',
+    TWILIO_FROM_NUMBER: targetEnv.TWILIO_FROM_NUMBER || '',
   };
 
   const envLines = Object.entries(syncedEnv).map(
     ([key, val]) => `${key}=${formatEnvValue(val)}`
   );
+  const functionsEnvPath = path.join(functionsDir, '.env');
   fs.writeFileSync(functionsEnvPath, `${envLines.join('\n')}\n`, 'utf-8');
 
-  console.log('Firebase deploy artifacts prepared successfully.');
+  console.log(
+    `Firebase deploy artifacts prepared cleanly for target="${target}" (using ${path.basename(sourceEnvPath)}).`
+  );
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const currentFile = fileURLToPath(import.meta.url);
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(currentFile)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

@@ -81,6 +81,7 @@ async function runTests() {
 
   await test('QA-03', 'Gift card code normalization (compact, lowercase, voucher URL)', async () => {
     assert.strictEqual(mod.normalizeGiftCardCode('kspa8f2a99b4102c'), 'KSPA-8F2A-99B4-102C');
+    assert.strictEqual(mod.normalizeGiftCardCode('test1234abcd5678'), 'TEST-1234-ABCD-5678');
     assert.strictEqual(
       mod.normalizeGiftCardCode('https://gift.kheadspawellness.com/?card=kspa-8f2a-99b4-102c'),
       'KSPA-8F2A-99B4-102C'
@@ -360,11 +361,13 @@ async function runTests() {
     assert.strictEqual(ok.recipientPhone, '+12015550144');
   });
 
-  await test('QA-26', 'Demo checkout HMAC verification, tamper rejection, and auto-disable when real Stripe key is set', async () => {
+  await test('QA-26', 'Demo checkout HMAC verification, tamper rejection, and auto-disable in prod or with real Stripe key', async () => {
     const prevAllow = process.env.ALLOW_DEMO_CHECKOUT;
     const prevSecret = process.env.STRIPE_SECRET_KEY;
+    const prevEnv = process.env.APP_ENV;
 
     try {
+      process.env.APP_ENV = 'staging';
       process.env.ALLOW_DEMO_CHECKOUT = 'true';
       process.env.STRIPE_SECRET_KEY = 'sk_test_sample';
       assert.strictEqual(mod.isDemoCheckoutAllowed(), true);
@@ -406,6 +409,12 @@ async function runTests() {
         /서명/
       );
 
+      // Production must block demo checkout even with ALLOW_DEMO_CHECKOUT=true and sk_test_sample
+      process.env.APP_ENV = 'production';
+      assert.strictEqual(mod.isDemoCheckoutAllowed(), false);
+
+      // Back to staging with real Stripe key must also lock out demo mode
+      process.env.APP_ENV = 'staging';
       process.env.STRIPE_SECRET_KEY = ['sk', 'live', 'qa_mock_123456789'].join('_');
       assert.strictEqual(mod.isDemoCheckoutAllowed(), false);
 
@@ -423,6 +432,44 @@ async function runTests() {
       else process.env.ALLOW_DEMO_CHECKOUT = prevAllow;
       if (prevSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
       else process.env.STRIPE_SECRET_KEY = prevSecret;
+      if (prevEnv === undefined) delete process.env.APP_ENV;
+      else process.env.APP_ENV = prevEnv;
+    }
+  });
+
+  await test('QA-27', 'Environment isolation: staging TEST- prefix issuance and cross-environment lookup/redeem rejection', async () => {
+    const prevEnv = process.env.APP_ENV;
+    try {
+      process.env.APP_ENV = 'staging';
+      const testCard = await mod.issueGiftCard({
+        faceValue: 100,
+        paidAmount: 80,
+        buyerName: 'Staging Tester',
+        buyerEmail: 'staging@example.com',
+        recipientType: 'self',
+        stripePaymentIntentId: 'pi_qa_staging_prefix_001',
+      });
+      assert(testCard.code.startsWith('TEST-'), 'Staging cards must start with TEST- prefix');
+      assert.strictEqual(mod.validateCodeEnvironmentMatch('KSPA-AAAA-BBBB-CCCC').allowed, false);
+
+      const stgLookup = await mod.getGiftCardByCodeAsync(testCard.code);
+      assert(stgLookup.card && stgLookup.card.code === testCard.code);
+
+      process.env.APP_ENV = 'production';
+      assert.strictEqual(mod.validateCodeEnvironmentMatch(testCard.code).allowed, false);
+      const prodLookup = await mod.getGiftCardByCodeAsync(testCard.code);
+      assert.strictEqual(prodLookup.card, undefined);
+
+      const prodRedeem = await mod.redeemGiftCardAsync({
+        code: testCard.code,
+        redeemAmount: 10,
+        location: 'Manhattan',
+        staffName: 'Tester',
+      });
+      assert.strictEqual(prodRedeem.success, false);
+    } finally {
+      if (prevEnv === undefined) delete process.env.APP_ENV;
+      else process.env.APP_ENV = prevEnv;
     }
   });
 
@@ -656,6 +703,8 @@ async function main() {
 
     const cleanEnv = {
       ...process.env,
+      APP_ENV: 'production',
+      NEXT_PUBLIC_APP_ENV: 'production',
       NODE_PATH: path.join(ROOT_DIR, 'node_modules'),
       NEXT_PUBLIC_APP_URL: 'https://gift.kheadspawellness.com',
       NEXT_PUBLIC_BOOKING_URL: 'https://kheadspawellness.glossgenius.com',

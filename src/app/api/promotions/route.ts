@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ACTIVE_PROMOTION, calculatePromotionDiscount } from '@/lib/storage';
+import { getAppEnv, getGiftCardCodePrefix } from '@/lib/barcode';
 import { isDemoCheckoutAllowed } from '@/lib/stripe';
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
@@ -13,6 +14,8 @@ export async function GET() {
       serverTime: new Date().toISOString(),
       isPromoActive: calc200.isPromoActive,
       demoCheckoutAvailable: isDemoCheckoutAllowed(),
+      appEnv: getAppEnv(),
+      cardCodePrefix: getGiftCardCodePrefix(),
       sampleCalculation: {
         faceValue: 200,
         chargeAmount: calc200.chargeAmount,

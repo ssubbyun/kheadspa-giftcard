@@ -586,9 +586,13 @@ export default function GiftCardForm({
 
     if (!stripePromise && !useDemo) {
       setFormError(
-        lang === 'ko'
-          ? '유효한 Stripe 공개키(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ 또는 pk_live_)가 설정되지 않았습니다. 테스트하려면 아래 데모 시뮬레이션 스위치를 켜 주세요.'
-          : 'Stripe Publishable Key (pk_test_ or pk_live_) is not configured yet.'
+        canUseDemoMode
+          ? lang === 'ko'
+            ? '유효한 Stripe 공개키(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ 또는 pk_live_)가 설정되지 않았습니다. 테스트하려면 아래 데모 시뮬레이션 스위치를 켜 주세요.'
+            : 'Stripe Publishable Key (pk_test_ or pk_live_) is not configured yet. Enable the Demo Simulation switch below to test.'
+          : lang === 'ko'
+            ? '온라인 카드 결제 준비 중입니다 (Stripe Live Key 연결 대기 중).'
+            : 'Online card checkout will open once live Stripe keys are connected.'
       );
       return;
     }

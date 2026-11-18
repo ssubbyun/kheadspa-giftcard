@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import Stripe from 'stripe';
+import { getAppEnv } from './barcode';
 
 export function hasRealStripeSecretKey(): boolean {
   const key = (process.env.STRIPE_SECRET_KEY || '').trim();
@@ -11,6 +12,9 @@ export function hasRealStripeSecretKey(): boolean {
 }
 
 export function isDemoCheckoutAllowed(): boolean {
+  if (getAppEnv() === 'production') {
+    return false;
+  }
   return (
     !hasRealStripeSecretKey() &&
     (process.env.ALLOW_DEMO_CHECKOUT || '').trim().toLowerCase() === 'true'
